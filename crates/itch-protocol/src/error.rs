@@ -33,4 +33,31 @@ pub enum ProtocolError {
         /// The offending byte from the wire.
         code: u8,
     },
+
+    /// The decode buffer was shorter than the message body required.
+    #[error("decode buffer truncated: needed {need} bytes, got {got}")]
+    Truncated {
+        /// Number of bytes the codec needed to advance.
+        need: usize,
+        /// Number of bytes actually available.
+        got: usize,
+    },
+
+    /// The encode output buffer was shorter than the message body
+    /// required.
+    #[error("encode buffer too small: needed {need} bytes, got {got}")]
+    BufferTooSmall {
+        /// Number of bytes the codec needed to write.
+        need: usize,
+        /// Number of bytes actually available in the output buffer.
+        got: usize,
+    },
+
+    /// The 1-byte type tag did not match any of the 20 ITCH 5.0
+    /// message kinds.
+    #[error("unknown ITCH message type tag 0x{0:02x}")]
+    UnknownMessageType(
+        /// The offending tag byte from the wire.
+        u8,
+    ),
 }
