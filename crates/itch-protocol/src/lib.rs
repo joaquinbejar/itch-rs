@@ -19,6 +19,7 @@
 
 pub mod enums;
 pub mod error;
+pub mod messages;
 pub mod primitives;
 
 pub use enums::{
@@ -28,6 +29,12 @@ pub use enums::{
     TradingState, YesNo,
 };
 pub use error::ProtocolError;
+pub use messages::{
+    AddOrder, AddOrderWithMpid, BrokenTrade, CrossTrade, Header, IpoQuotingPeriodUpdate,
+    MarketParticipantPosition, Message, MwcbDeclineLevel, MwcbStatus, Noii, OrderCancel,
+    OrderDelete, OrderExecuted, OrderExecutedWithPrice, OrderReplace, RegShoRestriction,
+    RetailPriceImprovement, StockDirectory, StockTradingAction, SystemEvent, TradeNonCross,
+};
 pub use primitives::{
     MatchNumber, Mpid, OrderReference, Price4, Price8, Shares, Stock, StockLocate, Timestamp,
     TimestampError, TrackingNumber,
