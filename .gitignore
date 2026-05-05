@@ -1,0 +1,34 @@
+# macOS
+.DS_Store
+
+# JetBrains IDEs
+.idea/
+
+# Cargo / Rust build output
+/target
+**/target
+
+# Coverage output
+/coverage
+*.profraw
+
+# Criterion + bench-hdr output
+/target/criterion
+/target/bench-hdr
+*.hgrm
+
+# Fuzz corpus (large; keep seeds, ignore the rest)
+/fuzz/corpus/*/
+!/fuzz/corpus/*/.gitkeep
+/fuzz/artifacts
+
+# proptest regressions are committed (per skill guidance) — do NOT ignore
+# /proptest-regressions/    # intentionally NOT ignored
+
+# Editor swap files
+*.swp
+*.swo
+
+# Environment files (never commit credentials)
+.env
+.env.local
