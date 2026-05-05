@@ -19,8 +19,12 @@ tokio = { version = "1", features = ["sync", "time", "rt"] }
 # itch-replay feature added in issue #47
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "sync"] }
 
 [features]
 default = []
+
+[[example]]
+name = "matching_engine_publisher"
+path = "examples/matching_engine_publisher.rs"
 
