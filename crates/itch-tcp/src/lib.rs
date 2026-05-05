@@ -69,6 +69,9 @@ use thiserror::Error;
 use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
 use tokio_util::codec::{Decoder, Encoder, Framed};
 
+mod server;
+pub use server::{Server, DEFAULT_BROADCAST_CAPACITY};
+
 /// Maximum frame size the codec will accept (1 KiB). The largest
 /// ITCH 5.0 message is 50 bytes; this leaves ample headroom for any
 /// future spec growth while still bounding memory if a peer sends

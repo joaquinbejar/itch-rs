@@ -12,12 +12,14 @@ categories.workspace   = true
 
 [dependencies]
 itch-protocol = { workspace = true }
+itch-source   = { path = "../itch-source", version = "0.1" }
 thiserror     = { workspace = true }
-tokio         = { workspace = true, features = ["net", "rt", "macros", "io-util"] }
+tokio         = { workspace = true, features = ["net", "rt", "macros", "io-util", "sync"] }
 tokio-util    = { workspace = true, features = ["codec"] }
 bytes         = { workspace = true }
 futures       = { workspace = true }
 tracing       = { workspace = true }
 
 [dev-dependencies]
+itch-source = { path = "../itch-source", version = "0.1" }
 tokio = { workspace = true, features = ["net", "rt", "macros", "io-util", "time", "test-util"] }
