@@ -17,6 +17,8 @@ path = "src/main.rs"
 [dependencies]
 itch-protocol      = { workspace = true }
 itch-tcp           = { workspace = true }
+itch-source        = { workspace = true }
+clap               = { version = "4.4", features = ["derive"] }
 tokio              = { workspace = true, features = ["net", "rt-multi-thread", "macros", "time", "signal"] }
 futures            = { workspace = true }
 tracing            = { workspace = true }

@@ -29,6 +29,7 @@ tracing       = "0.1"
 # Internal crates
 itch-protocol = { path = "crates/itch-protocol", version = "0.1.0" }
 itch-tcp      = { path = "crates/itch-tcp",      version = "0.1.0" }
+itch-source   = { path = "crates/itch-source",   version = "0.1.0" }
 
 [profile.release]
 lto           = "thin"
