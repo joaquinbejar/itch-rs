@@ -14,7 +14,7 @@ itch-rs/
 ├── Cargo.toml                 # workspace
 └── crates/
     ├── itch-protocol/         # pure types + binary codec, no I/O
-    ├── itch-transport/        # async transport (TCP today, MoldUDP64 stub)
+    ├── itch-tcp/              # length-prefix TCP framing (demos)
     ├── itch-server/           # demo bin: replays a synthetic session
     └── itch-client/           # demo bin: prints decoded messages
 ```
@@ -24,9 +24,14 @@ The split mirrors the layered design of the protocol itself:
 | Layer                | Crate            | Knows about                              |
 |----------------------|------------------|------------------------------------------|
 | Domain (messages)    | `itch-protocol`  | Bytes ⇆ structs                          |
-| Framing & I/O        | `itch-transport` | TcpStream, futures Stream/Sink           |
+| Framing & I/O (demo) | `itch-tcp`       | TcpStream, futures Stream/Sink           |
 | Application          | `itch-server`,   | Business logic: session replay, printing |
 |                      | `itch-client`    |                                          |
+
+Production transports — `itch-soup` (SoupBinTCP 3.00 unicast) and
+`itch-mold` (MoldUDP64 V1.00 multicast) — are siblings of `itch-tcp`
+landing in v0.3. They never depend on each other; consumers pick the
+one they need.
 
 `itch-protocol` is `no_std`-friendly in spirit (we only use `std` for `Error`
 plumbing) and has zero async dependencies. You could reuse it to read a `.itch`
@@ -121,11 +126,18 @@ decode + roundtrip test):
 
 ## What's next
 
-- Plug `MoldUDP64` into the transport layer (gap detection, packing,
-  retransmission). The shape lives in `itch-transport/src/mold.rs`.
-- Build an order-book reconstruction crate on top of `itch-protocol`.
-- Add a `.itch` file replayer (Glimpse / ITCH archive) — same `Decode` trait,
-  different bytes source.
+- **v0.2 — `itch-source`.** Three traits — `MessageSource` (the feed),
+  `SeqStore` (gap-recovery storage), `SubscriptionPolicy` (warmup) —
+  that let anyone plug a matching engine, capture file, or database
+  behind `itch-server`. See [`docs/ITCH-SOURCE.md`](docs/ITCH-SOURCE.md).
+- **v0.3 — `itch-soup` + `itch-mold`.** Production unicast (SoupBinTCP
+  3.00, with login + heartbeat + sequence-resume) and multicast
+  (MoldUDP64 V1.00, with gap detection and a request server).
+- **v0.5 — `itch-book`.** L2/L3 order-book reconstruction on top of
+  `itch-protocol`. **`itch-replay`** for `.itch` capture files lands
+  in the same milestone.
+
+The full plan is in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## License
 
