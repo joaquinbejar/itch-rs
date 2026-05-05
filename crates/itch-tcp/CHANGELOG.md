@@ -14,8 +14,10 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
   `Encoder<Message>` over a 2-byte big-endian length prefix that
   includes the 1-byte ITCH type tag.
 - `ItchConnection` alias (`Framed<TcpStream, ItchCodec>`) plus
-  async helpers `connect`, `bind`, `accept`. All three set
-  `TCP_NODELAY` and propagate the result via `?`.
+  async helpers `connect`, `bind`, `accept`. `connect` and `accept`
+  set `TCP_NODELAY` on the resulting `TcpStream` and propagate the
+  result via `?`; `bind` returns a `TcpListener` (no socket to
+  configure).
 - `MAX_MESSAGE_LEN = 1024` cap. The codec carries a `pending_skip`
   recovery counter so a `FrameTooLarge` reject drains the rest of
   the bad frame across multiple reads — partial oversized frames
