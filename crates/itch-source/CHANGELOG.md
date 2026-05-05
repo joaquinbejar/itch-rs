@@ -52,6 +52,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Iterator<Item = Message> + Send + Unpin`. Convenience
   `From<Vec<Message>>`. Pair with `canonical_session()` for
   fixture-based replays.
+- `crate::impls::WarmupFromSeqStore<S: SeqStore>` — `SubscriptionPolicy`
+  impl that reads all stored messages (earliest through latest) as warmup.
+  Useful for publishing the current L2 book snapshot or end-of-day state
+  to new sessions.
+- `crate::impls::Tee` — broadcast adapter that pulls from one message
+  source and broadcasts to N consumers via `tokio::sync::broadcast`. Lets
+  one source feed multiple transports (SoupBinTCP + MoldUDP64) in the same
+  publisher process. Takes ownership of a pinned boxed stream.
+- `crate::impls::MergeByTimestamp` — message-merge combinator that yields
+  from N input sources ordered by smallest timestamp (tie-break by source
+  order). Placeholder structure for v0.2; full async concurrent polling of
+  N sources deferred to v0.3+.
+- `crate::impls::merge_by_timestamp()` — helper function that creates an
+  empty `MergeByTimestamp` (v0.2 signature placeholder).
 
 ## [0.1.0] — 2026-05-05
 
