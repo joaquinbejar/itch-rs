@@ -6,6 +6,25 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+### Changed
+
+- Rewrite main glue layer to use `itch_tcp::Server::bind(addr, source, store, policy).serve()`.
+  **~30 LoC main per ADR-0012 acceptance**: source + store + policy constructor calls,
+  no bespoke accept/send loops.
+- Add `clap` CLI parser; `--bind ADDR` flag (default `127.0.0.1:9100`, fallback to
+  `ITCH_BIND` env var for backward compat).
+- Add `--source iterator|replay-glimpse|replay-raw` flag (default `iterator`).
+  Iterator source wraps `canonical_session()` from `itch-source` crate.
+  `replay-glimpse` / `replay-raw` return `Unsupported` until `itch-replay`
+  ships in v0.5 (issue #47).
+- Add `--cache-size N` flag (default 65 536) for the
+  `RingBufferSeqStore` capacity.
+- Add `--source-path PATH` flag (placeholder for the v0.5 replay
+  sources).
+- Use `itch-source` traits directly: `IteratorSource`,
+  `RingBufferSeqStore`, `StaticPolicy`. Store and policy bound to
+  `Server::bind` generics for zero-cost abstraction.
+
 ## 0.1.0 — 2026-05-05
 
 ### Added
