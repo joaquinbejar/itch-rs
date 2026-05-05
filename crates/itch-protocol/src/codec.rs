@@ -79,52 +79,61 @@ fn need(buf: &[u8], n: usize) -> Result<(), ProtocolError> {
     Ok(())
 }
 
+/// Borrow `[off, off + n)` of `buf` or return `Truncated`.
+///
+/// Every read helper goes through this — the codec contains no
+/// unchecked indexing, satisfying the "ZERO unchecked `[]`" rule
+/// from `rules/global_rules.md`.
 #[inline]
-fn need_out(buf: &[u8], n: usize) -> Result<(), ProtocolError> {
-    if buf.len() < n {
-        return Err(ProtocolError::BufferTooSmall {
-            need: n,
-            got: buf.len(),
-        });
-    }
-    Ok(())
+fn slice_n(buf: &[u8], off: usize, n: usize) -> Result<&[u8], ProtocolError> {
+    let end = off.checked_add(n).ok_or(ProtocolError::Truncated {
+        need: usize::MAX,
+        got: buf.len(),
+    })?;
+    buf.get(off..end).ok_or(ProtocolError::Truncated {
+        need: end,
+        got: buf.len(),
+    })
+}
+
+/// Mutably borrow `[off, off + n)` of `buf` or return
+/// `BufferTooSmall` (used by every encode helper).
+#[inline]
+fn slice_n_mut(buf: &mut [u8], off: usize, n: usize) -> Result<&mut [u8], ProtocolError> {
+    let end = off.checked_add(n).ok_or(ProtocolError::BufferTooSmall {
+        need: usize::MAX,
+        got: buf.len(),
+    })?;
+    let len = buf.len();
+    buf.get_mut(off..end).ok_or(ProtocolError::BufferTooSmall {
+        need: end,
+        got: len,
+    })
 }
 
 #[inline]
 fn read_u8(buf: &[u8], off: usize) -> Result<u8, ProtocolError> {
-    need(&buf[off..], 1)?;
-    Ok(buf[off])
+    let s = slice_n(buf, off, 1)?;
+    Ok(s[0])
 }
 
 #[inline]
 fn read_u16(buf: &[u8], off: usize) -> Result<u16, ProtocolError> {
-    need(&buf[off..], 2)?;
-    Ok(u16::from_be_bytes([buf[off], buf[off + 1]]))
+    let s = slice_n(buf, off, 2)?;
+    Ok(u16::from_be_bytes([s[0], s[1]]))
 }
 
 #[inline]
 fn read_u32(buf: &[u8], off: usize) -> Result<u32, ProtocolError> {
-    need(&buf[off..], 4)?;
-    Ok(u32::from_be_bytes([
-        buf[off],
-        buf[off + 1],
-        buf[off + 2],
-        buf[off + 3],
-    ]))
+    let s = slice_n(buf, off, 4)?;
+    Ok(u32::from_be_bytes([s[0], s[1], s[2], s[3]]))
 }
 
 #[inline]
 fn read_u64(buf: &[u8], off: usize) -> Result<u64, ProtocolError> {
-    need(&buf[off..], 8)?;
+    let s = slice_n(buf, off, 8)?;
     Ok(u64::from_be_bytes([
-        buf[off],
-        buf[off + 1],
-        buf[off + 2],
-        buf[off + 3],
-        buf[off + 4],
-        buf[off + 5],
-        buf[off + 6],
-        buf[off + 7],
+        s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
     ]))
 }
 
@@ -132,50 +141,62 @@ fn read_u64(buf: &[u8], off: usize) -> Result<u64, ProtocolError> {
 /// into a `[u8; 8]` and using `u64::from_be_bytes`.
 #[inline]
 fn read_u48(buf: &[u8], off: usize) -> Result<u64, ProtocolError> {
-    need(&buf[off..], 6)?;
+    let s = slice_n(buf, off, 6)?;
     let mut wide = [0u8; 8];
-    wide[2..].copy_from_slice(&buf[off..off + 6]);
+    wide[2..].copy_from_slice(s);
     Ok(u64::from_be_bytes(wide))
 }
 
 #[inline]
 fn read_bytes_n<const N: usize>(buf: &[u8], off: usize) -> Result<[u8; N], ProtocolError> {
-    need(&buf[off..], N)?;
+    let s = slice_n(buf, off, N)?;
     let mut out = [0u8; N];
-    out.copy_from_slice(&buf[off..off + N]);
+    out.copy_from_slice(s);
     Ok(out)
 }
 
 #[inline]
-fn write_u8(buf: &mut [u8], off: usize, v: u8) {
-    buf[off] = v;
+fn write_u8(buf: &mut [u8], off: usize, v: u8) -> Result<(), ProtocolError> {
+    let s = slice_n_mut(buf, off, 1)?;
+    s[0] = v;
+    Ok(())
 }
 
 #[inline]
-fn write_u16(buf: &mut [u8], off: usize, v: u16) {
-    buf[off..off + 2].copy_from_slice(&v.to_be_bytes());
+fn write_u16(buf: &mut [u8], off: usize, v: u16) -> Result<(), ProtocolError> {
+    let s = slice_n_mut(buf, off, 2)?;
+    s.copy_from_slice(&v.to_be_bytes());
+    Ok(())
 }
 
 #[inline]
-fn write_u32(buf: &mut [u8], off: usize, v: u32) {
-    buf[off..off + 4].copy_from_slice(&v.to_be_bytes());
+fn write_u32(buf: &mut [u8], off: usize, v: u32) -> Result<(), ProtocolError> {
+    let s = slice_n_mut(buf, off, 4)?;
+    s.copy_from_slice(&v.to_be_bytes());
+    Ok(())
 }
 
 #[inline]
-fn write_u64(buf: &mut [u8], off: usize, v: u64) {
-    buf[off..off + 8].copy_from_slice(&v.to_be_bytes());
+fn write_u64(buf: &mut [u8], off: usize, v: u64) -> Result<(), ProtocolError> {
+    let s = slice_n_mut(buf, off, 8)?;
+    s.copy_from_slice(&v.to_be_bytes());
+    Ok(())
 }
 
 /// Write the low 6 bytes of `v` (big-endian).
 #[inline]
-fn write_u48(buf: &mut [u8], off: usize, v: u64) {
+fn write_u48(buf: &mut [u8], off: usize, v: u64) -> Result<(), ProtocolError> {
+    let s = slice_n_mut(buf, off, 6)?;
     let bytes = v.to_be_bytes();
-    buf[off..off + 6].copy_from_slice(&bytes[2..8]);
+    s.copy_from_slice(&bytes[2..8]);
+    Ok(())
 }
 
 #[inline]
-fn write_bytes(buf: &mut [u8], off: usize, src: &[u8]) {
-    buf[off..off + src.len()].copy_from_slice(src);
+fn write_bytes(buf: &mut [u8], off: usize, src: &[u8]) -> Result<(), ProtocolError> {
+    let s = slice_n_mut(buf, off, src.len())?;
+    s.copy_from_slice(src);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -193,12 +214,14 @@ impl Header {
         })
     }
 
-    /// Encode self at offset 0 of `buf`. `buf` must be ≥ 10 bytes.
+    /// Encode self at offset 0 of `buf`. Returns
+    /// [`ProtocolError::BufferTooSmall`] when `buf.len() < 10`.
     #[inline]
-    fn encode_at(&self, buf: &mut [u8]) {
-        write_u16(buf, 0, self.stock_locate.as_u16());
-        write_u16(buf, 2, self.tracking_number.as_u16());
-        write_u48(buf, 4, self.timestamp.as_u64());
+    fn encode_at(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
+        write_u16(buf, 0, self.stock_locate.as_u16())?;
+        write_u16(buf, 2, self.tracking_number.as_u16())?;
+        write_u48(buf, 4, self.timestamp.as_u64())?;
+        Ok(())
     }
 }
 
@@ -213,9 +236,9 @@ impl Encode for SystemEvent {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u8(buf, 10, self.event_code.to_byte());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u8(buf, 10, self.event_code.to_byte())?;
         Ok(())
     }
 }
@@ -237,22 +260,22 @@ impl Encode for StockDirectory {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_bytes(buf, 10, self.stock.as_bytes());
-        write_u8(buf, 18, self.market_category.to_byte());
-        write_u8(buf, 19, self.financial_status.to_byte());
-        write_u32(buf, 20, self.round_lot_size.as_u32());
-        write_u8(buf, 24, self.round_lots_only.to_byte());
-        write_u8(buf, 25, self.issue_classification);
-        write_bytes(buf, 26, &self.issue_subtype);
-        write_u8(buf, 28, self.authenticity.to_byte());
-        write_u8(buf, 29, self.short_sale_threshold.to_byte());
-        write_u8(buf, 30, self.ipo_flag.to_byte());
-        write_u8(buf, 31, self.luld_reference_price_tier.to_byte());
-        write_u8(buf, 32, self.etp_flag.to_byte());
-        write_u32(buf, 33, self.etp_leverage_factor);
-        write_u8(buf, 37, self.inverse_indicator.to_byte());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_bytes(buf, 10, self.stock.as_bytes())?;
+        write_u8(buf, 18, self.market_category.to_byte())?;
+        write_u8(buf, 19, self.financial_status.to_byte())?;
+        write_u32(buf, 20, self.round_lot_size.as_u32())?;
+        write_u8(buf, 24, self.round_lots_only.to_byte())?;
+        write_u8(buf, 25, self.issue_classification)?;
+        write_bytes(buf, 26, &self.issue_subtype)?;
+        write_u8(buf, 28, self.authenticity.to_byte())?;
+        write_u8(buf, 29, self.short_sale_threshold.to_byte())?;
+        write_u8(buf, 30, self.ipo_flag.to_byte())?;
+        write_u8(buf, 31, self.luld_reference_price_tier.to_byte())?;
+        write_u8(buf, 32, self.etp_flag.to_byte())?;
+        write_u32(buf, 33, self.etp_leverage_factor)?;
+        write_u8(buf, 37, self.inverse_indicator.to_byte())?;
         Ok(())
     }
 }
@@ -287,12 +310,12 @@ impl Encode for StockTradingAction {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_bytes(buf, 10, self.stock.as_bytes());
-        write_u8(buf, 18, self.trading_state.to_byte());
-        write_u8(buf, 19, self.reserved);
-        write_bytes(buf, 20, &self.reason);
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_bytes(buf, 10, self.stock.as_bytes())?;
+        write_u8(buf, 18, self.trading_state.to_byte())?;
+        write_u8(buf, 19, self.reserved)?;
+        write_bytes(buf, 20, &self.reason)?;
         Ok(())
     }
 }
@@ -317,10 +340,10 @@ impl Encode for RegShoRestriction {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_bytes(buf, 10, self.stock.as_bytes());
-        write_u8(buf, 18, self.reg_sho_action.to_byte());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_bytes(buf, 10, self.stock.as_bytes())?;
+        write_u8(buf, 18, self.reg_sho_action.to_byte())?;
         Ok(())
     }
 }
@@ -343,13 +366,13 @@ impl Encode for MarketParticipantPosition {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_bytes(buf, 10, self.mpid.as_bytes());
-        write_bytes(buf, 14, self.stock.as_bytes());
-        write_u8(buf, 22, self.primary_market_maker.to_byte());
-        write_u8(buf, 23, self.market_maker_mode.to_byte());
-        write_u8(buf, 24, self.market_participant_state.to_byte());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_bytes(buf, 10, self.mpid.as_bytes())?;
+        write_bytes(buf, 14, self.stock.as_bytes())?;
+        write_u8(buf, 22, self.primary_market_maker.to_byte())?;
+        write_u8(buf, 23, self.market_maker_mode.to_byte())?;
+        write_u8(buf, 24, self.market_participant_state.to_byte())?;
         Ok(())
     }
 }
@@ -375,11 +398,11 @@ impl Encode for MwcbDeclineLevel {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.level1.as_u64());
-        write_u64(buf, 18, self.level2.as_u64());
-        write_u64(buf, 26, self.level3.as_u64());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.level1.as_u64())?;
+        write_u64(buf, 18, self.level2.as_u64())?;
+        write_u64(buf, 26, self.level3.as_u64())?;
         Ok(())
     }
 }
@@ -403,9 +426,9 @@ impl Encode for MwcbStatus {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u8(buf, 10, self.breached_level.to_byte());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u8(buf, 10, self.breached_level.to_byte())?;
         Ok(())
     }
 }
@@ -427,12 +450,12 @@ impl Encode for IpoQuotingPeriodUpdate {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_bytes(buf, 10, self.stock.as_bytes());
-        write_u32(buf, 18, self.ipo_quotation_release_time);
-        write_u8(buf, 22, self.ipo_quotation_release_qualifier.to_byte());
-        write_u32(buf, 23, self.ipo_price.as_u32());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_bytes(buf, 10, self.stock.as_bytes())?;
+        write_u32(buf, 18, self.ipo_quotation_release_time)?;
+        write_u8(buf, 22, self.ipo_quotation_release_qualifier.to_byte())?;
+        write_u32(buf, 23, self.ipo_price.as_u32())?;
         Ok(())
     }
 }
@@ -457,13 +480,13 @@ impl Encode for AddOrder {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.order_ref.as_u64());
-        write_u8(buf, 18, self.side.to_byte());
-        write_u32(buf, 19, self.shares.as_u32());
-        write_bytes(buf, 23, self.stock.as_bytes());
-        write_u32(buf, 31, self.price.as_u32());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.order_ref.as_u64())?;
+        write_u8(buf, 18, self.side.to_byte())?;
+        write_u32(buf, 19, self.shares.as_u32())?;
+        write_bytes(buf, 23, self.stock.as_bytes())?;
+        write_u32(buf, 31, self.price.as_u32())?;
         Ok(())
     }
 }
@@ -489,14 +512,14 @@ impl Encode for AddOrderWithMpid {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.order_ref.as_u64());
-        write_u8(buf, 18, self.side.to_byte());
-        write_u32(buf, 19, self.shares.as_u32());
-        write_bytes(buf, 23, self.stock.as_bytes());
-        write_u32(buf, 31, self.price.as_u32());
-        write_bytes(buf, 35, self.attribution.as_bytes());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.order_ref.as_u64())?;
+        write_u8(buf, 18, self.side.to_byte())?;
+        write_u32(buf, 19, self.shares.as_u32())?;
+        write_bytes(buf, 23, self.stock.as_bytes())?;
+        write_u32(buf, 31, self.price.as_u32())?;
+        write_bytes(buf, 35, self.attribution.as_bytes())?;
         Ok(())
     }
 }
@@ -523,11 +546,11 @@ impl Encode for OrderExecuted {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.order_ref.as_u64());
-        write_u32(buf, 18, self.executed_shares.as_u32());
-        write_u64(buf, 22, self.match_number.as_u64());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.order_ref.as_u64())?;
+        write_u32(buf, 18, self.executed_shares.as_u32())?;
+        write_u64(buf, 22, self.match_number.as_u64())?;
         Ok(())
     }
 }
@@ -551,13 +574,13 @@ impl Encode for OrderExecutedWithPrice {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.order_ref.as_u64());
-        write_u32(buf, 18, self.executed_shares.as_u32());
-        write_u64(buf, 22, self.match_number.as_u64());
-        write_u8(buf, 30, self.printable.to_byte());
-        write_u32(buf, 31, self.execution_price.as_u32());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.order_ref.as_u64())?;
+        write_u32(buf, 18, self.executed_shares.as_u32())?;
+        write_u64(buf, 22, self.match_number.as_u64())?;
+        write_u8(buf, 30, self.printable.to_byte())?;
+        write_u32(buf, 31, self.execution_price.as_u32())?;
         Ok(())
     }
 }
@@ -583,10 +606,10 @@ impl Encode for OrderCancel {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.order_ref.as_u64());
-        write_u32(buf, 18, self.cancelled_shares.as_u32());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.order_ref.as_u64())?;
+        write_u32(buf, 18, self.cancelled_shares.as_u32())?;
         Ok(())
     }
 }
@@ -609,9 +632,9 @@ impl Encode for OrderDelete {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.order_ref.as_u64());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.order_ref.as_u64())?;
         Ok(())
     }
 }
@@ -633,12 +656,12 @@ impl Encode for OrderReplace {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.original_order_ref.as_u64());
-        write_u64(buf, 18, self.new_order_ref.as_u64());
-        write_u32(buf, 26, self.shares.as_u32());
-        write_u32(buf, 30, self.price.as_u32());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.original_order_ref.as_u64())?;
+        write_u64(buf, 18, self.new_order_ref.as_u64())?;
+        write_u32(buf, 26, self.shares.as_u32())?;
+        write_u32(buf, 30, self.price.as_u32())?;
         Ok(())
     }
 }
@@ -663,14 +686,14 @@ impl Encode for TradeNonCross {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.order_ref.as_u64());
-        write_u8(buf, 18, self.side.to_byte());
-        write_u32(buf, 19, self.shares.as_u32());
-        write_bytes(buf, 23, self.stock.as_bytes());
-        write_u32(buf, 31, self.price.as_u32());
-        write_u64(buf, 35, self.match_number.as_u64());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.order_ref.as_u64())?;
+        write_u8(buf, 18, self.side.to_byte())?;
+        write_u32(buf, 19, self.shares.as_u32())?;
+        write_bytes(buf, 23, self.stock.as_bytes())?;
+        write_u32(buf, 31, self.price.as_u32())?;
+        write_u64(buf, 35, self.match_number.as_u64())?;
         Ok(())
     }
 }
@@ -697,13 +720,13 @@ impl Encode for CrossTrade {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.shares);
-        write_bytes(buf, 18, self.stock.as_bytes());
-        write_u32(buf, 26, self.cross_price.as_u32());
-        write_u64(buf, 30, self.match_number.as_u64());
-        write_u8(buf, 38, self.cross_type.to_byte());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.shares)?;
+        write_bytes(buf, 18, self.stock.as_bytes())?;
+        write_u32(buf, 26, self.cross_price.as_u32())?;
+        write_u64(buf, 30, self.match_number.as_u64())?;
+        write_u8(buf, 38, self.cross_type.to_byte())?;
         Ok(())
     }
 }
@@ -729,9 +752,9 @@ impl Encode for BrokenTrade {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.match_number.as_u64());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.match_number.as_u64())?;
         Ok(())
     }
 }
@@ -753,17 +776,17 @@ impl Encode for Noii {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_u64(buf, 10, self.paired_shares);
-        write_u64(buf, 18, self.imbalance_shares);
-        write_u8(buf, 26, self.imbalance_direction.to_byte());
-        write_bytes(buf, 27, self.stock.as_bytes());
-        write_u32(buf, 35, self.far_price.as_u32());
-        write_u32(buf, 39, self.near_price.as_u32());
-        write_u32(buf, 43, self.current_reference_price.as_u32());
-        write_u8(buf, 47, self.cross_type.to_byte());
-        write_u8(buf, 48, self.price_variation.to_byte());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_u64(buf, 10, self.paired_shares)?;
+        write_u64(buf, 18, self.imbalance_shares)?;
+        write_u8(buf, 26, self.imbalance_direction.to_byte())?;
+        write_bytes(buf, 27, self.stock.as_bytes())?;
+        write_u32(buf, 35, self.far_price.as_u32())?;
+        write_u32(buf, 39, self.near_price.as_u32())?;
+        write_u32(buf, 43, self.current_reference_price.as_u32())?;
+        write_u8(buf, 47, self.cross_type.to_byte())?;
+        write_u8(buf, 48, self.price_variation.to_byte())?;
         Ok(())
     }
 }
@@ -793,10 +816,10 @@ impl Encode for RetailPriceImprovement {
     }
 
     fn encode_body(&self, buf: &mut [u8]) -> Result<(), ProtocolError> {
-        need_out(buf, Self::BODY_LEN)?;
-        self.header.encode_at(buf);
-        write_bytes(buf, 10, self.stock.as_bytes());
-        write_u8(buf, 18, self.interest_flag.to_byte());
+        let _ = slice_n_mut(buf, 0, Self::BODY_LEN)?;
+        self.header.encode_at(buf)?;
+        write_bytes(buf, 10, self.stock.as_bytes())?;
+        write_u8(buf, 18, self.interest_flag.to_byte())?;
         Ok(())
     }
 }
@@ -826,9 +849,9 @@ impl Message {
     ///   self.encoded_len()`.
     pub fn encode(&self, buf: &mut [u8]) -> Result<usize, ProtocolError> {
         let total = self.encoded_len();
-        need_out(buf, total)?;
-        buf[0] = self.tag();
-        let body = &mut buf[1..total];
+        let out = slice_n_mut(buf, 0, total)?;
+        out[0] = self.tag();
+        let body = &mut out[1..total];
         match self {
             Self::SystemEvent(m) => m.encode_body(body)?,
             Self::StockDirectory(m) => m.encode_body(body)?,
