@@ -122,11 +122,7 @@ impl SeqStore for RingBufferSeqStore {
         Ok(())
     }
 
-    async fn range(
-        &self,
-        from: u64,
-        count: usize,
-    ) -> Result<Vec<(u64, Message)>, Self::Error> {
+    async fn range(&self, from: u64, count: usize) -> Result<Vec<(u64, Message)>, Self::Error> {
         if count == 0 {
             return Ok(Vec::new());
         }
@@ -209,9 +205,18 @@ mod tests {
     #[tokio::test]
     async fn out_of_order_inserts_track_min_max_correctly() {
         let store = RingBufferSeqStore::with_capacity(64);
-        store.store(5, &msg(EventCode::StartOfMessages)).await.unwrap();
-        store.store(2, &msg(EventCode::StartOfSystemHours)).await.unwrap();
-        store.store(8, &msg(EventCode::EndOfMessages)).await.unwrap();
+        store
+            .store(5, &msg(EventCode::StartOfMessages))
+            .await
+            .unwrap();
+        store
+            .store(2, &msg(EventCode::StartOfSystemHours))
+            .await
+            .unwrap();
+        store
+            .store(8, &msg(EventCode::EndOfMessages))
+            .await
+            .unwrap();
         // BTreeMap-backed: latest is 8, earliest is 2.
         assert_eq!(store.earliest().await.unwrap(), 2);
         assert_eq!(store.latest().await.unwrap(), 8);
