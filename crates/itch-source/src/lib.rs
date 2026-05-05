@@ -41,6 +41,9 @@
 //!
 //! See § 7, 8, 10 of `docs/ITCH-SOURCE.md` for details.
 
+/// Default `MessageSource` / `SeqStore` / `SubscriptionPolicy`
+/// implementations.
+pub mod impls;
 /// Subscription policy for message filtering and warmup.
 pub mod policy;
 /// Durable frame storage for gap recovery.
@@ -49,7 +52,10 @@ pub mod seqstore;
 pub mod source;
 /// Canonical synthetic session fixture (all 20 ITCH message kinds).
 pub mod synthetic;
+/// Contract-test helpers third-party backends can use to self-verify.
+pub mod testing;
 
+pub use impls::{NullSeqStore, RingBufferSeqStore, RingBufferSeqStoreError};
 pub use policy::SubscriptionPolicy;
 pub use seqstore::SeqStore;
 pub use source::{MessageSource, SourceError};
