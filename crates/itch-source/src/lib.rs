@@ -40,6 +40,19 @@
 //!   (all state lives behind interior mutability or separate structs).
 //!
 //! See § 7, 8, 10 of `docs/ITCH-SOURCE.md` for details.
+//!
+//! ## Worked example
+//!
+//! For an end-to-end matching-engine publisher wiring all three
+//! traits together — `ChannelSource` fed by a simulated engine,
+//! `RingBufferSeqStore` for retransmission, `StaticPolicy::empty()`
+//! for warmup — see `examples/matching_engine_publisher.rs` and
+//! the longer-form walk-through in `docs/source-example.md`. Run
+//! the example with:
+//!
+//! ```bash
+//! cargo run -p itch-source --example matching_engine_publisher
+//! ```
 
 /// Default `MessageSource` / `SeqStore` / `SubscriptionPolicy`
 /// implementations.
