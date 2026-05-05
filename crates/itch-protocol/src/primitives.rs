@@ -191,6 +191,7 @@ impl Timestamp {
     ///
     /// Returns [`TimestampError::OutOfRange`] when `v >= 1 << 48`.
     #[inline]
+    #[must_use = "ignoring the Result will discard a possible OutOfRange error"]
     pub const fn try_new(v: u64) -> Result<Self, TimestampError> {
         if v > Self::MAX {
             Err(TimestampError::OutOfRange { value: v })
@@ -212,9 +213,20 @@ impl Timestamp {
 /// Stored verbatim with padding — equality is byte-equality. The
 /// codec encodes / decodes the full fixed-size field; padding is
 /// preserved on the wire.
+///
+/// `Default` returns an all-space buffer (matching the spec's
+/// padding byte), NOT all-zero, so a default-constructed `Stock`
+/// represents "blank symbol" on the wire.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Stock([u8; Self::WIRE_LEN]);
+
+impl Default for Stock {
+    #[inline]
+    fn default() -> Self {
+        Self([b' '; Self::WIRE_LEN])
+    }
+}
 
 impl Stock {
     /// Wire size in bytes.
@@ -246,9 +258,9 @@ impl Stock {
         &self.0
     }
 
-    /// Trimmed string view of the symbol. Returns the slice up to
-    /// (but excluding) the first space-padding byte. Does NOT
-    /// allocate.
+    /// Trimmed string view of the symbol. Strips trailing space
+    /// padding (`0x20`) per spec — embedded spaces, if any, are
+    /// preserved. Does NOT allocate.
     ///
     /// # Errors
     ///
@@ -256,18 +268,27 @@ impl Stock {
     /// UTF-8.
     #[inline]
     pub fn as_str(&self) -> Result<&str, core::str::Utf8Error> {
-        let trimmed = match self.0.iter().position(|&b| b == b' ') {
-            Some(idx) => &self.0[..idx],
-            None => &self.0[..],
+        let trimmed_end = match self.0.iter().rposition(|&b| b != b' ') {
+            Some(idx) => &self.0[..=idx],
+            None => &self.0[..0],
         };
-        core::str::from_utf8(trimmed)
+        core::str::from_utf8(trimmed_end)
     }
 }
 
 /// 4-byte ASCII broker code (MPID), right-padded with `0x20`.
+///
+/// `Default` returns an all-space buffer.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Mpid([u8; Self::WIRE_LEN]);
+
+impl Default for Mpid {
+    #[inline]
+    fn default() -> Self {
+        Self([b' '; Self::WIRE_LEN])
+    }
+}
 
 impl Mpid {
     /// Wire size in bytes.
@@ -299,7 +320,9 @@ impl Mpid {
         &self.0
     }
 
-    /// Trimmed string view. Does NOT allocate.
+    /// Trimmed string view. Strips trailing space padding (`0x20`)
+    /// per spec — embedded spaces, if any, are preserved. Does NOT
+    /// allocate.
     ///
     /// # Errors
     ///
@@ -307,11 +330,11 @@ impl Mpid {
     /// UTF-8.
     #[inline]
     pub fn as_str(&self) -> Result<&str, core::str::Utf8Error> {
-        let trimmed = match self.0.iter().position(|&b| b == b' ') {
-            Some(idx) => &self.0[..idx],
-            None => &self.0[..],
+        let trimmed_end = match self.0.iter().rposition(|&b| b != b' ') {
+            Some(idx) => &self.0[..=idx],
+            None => &self.0[..0],
         };
-        core::str::from_utf8(trimmed)
+        core::str::from_utf8(trimmed_end)
     }
 }
 
@@ -440,12 +463,33 @@ mod tests {
     }
 
     #[test]
-    fn stock_default_is_all_spaces_via_zero_default() {
-        // The Default impl produces all-zero bytes (Rust default for
-        // [u8; 8]). This documents the choice — callers wanting a
-        // padded-blank Stock should use Stock::new("").
-        let blank = Stock::new("");
+    fn stock_default_is_space_padded() {
+        // Stock::default() returns the spec's space-padded blank
+        // buffer (NOT all-zero, which would be the auto-derived
+        // [u8; 8] default).
+        let blank = Stock::default();
         assert_eq!(blank.as_bytes(), b"        ");
+        assert_eq!(Stock::new(""), blank);
+    }
+
+    #[test]
+    fn mpid_default_is_space_padded() {
+        let blank = Mpid::default();
+        assert_eq!(blank.as_bytes(), b"    ");
+        assert_eq!(Mpid::new(""), blank);
+    }
+
+    #[test]
+    fn stock_as_str_preserves_embedded_chars_strips_trailing_space() {
+        // Trailing-space stripping only — embedded chars survive.
+        let s = Stock::from_bytes(*b"AB CD   ");
+        assert_eq!(s.as_str().expect("utf-8"), "AB CD");
+    }
+
+    #[test]
+    fn stock_as_str_all_spaces_returns_empty() {
+        let s = Stock::from_bytes(*b"        ");
+        assert_eq!(s.as_str().expect("utf-8"), "");
     }
 
     #[test]
