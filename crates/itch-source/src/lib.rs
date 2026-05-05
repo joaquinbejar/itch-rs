@@ -56,7 +56,7 @@ pub mod synthetic;
 pub mod testing;
 
 pub use impls::{NullSeqStore, RingBufferSeqStore, RingBufferSeqStoreError};
-pub use policy::SubscriptionPolicy;
+pub use policy::{StaticPolicy, SubscriptionPolicy};
 pub use seqstore::SeqStore;
 pub use source::{MessageSource, SourceError};
 pub use synthetic::canonical_session;
