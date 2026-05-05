@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/itch-protocol",
     "crates/itch-tcp",
+    "crates/itch-source",
     "crates/itch-server",
     "crates/itch-client",
 ]

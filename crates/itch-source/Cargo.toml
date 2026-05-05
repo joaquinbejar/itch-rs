@@ -1,0 +1,26 @@
+[package]
+name = "itch-source"
+version = "0.1.0"
+edition = "2021"
+authors = ["Joaquin Bejar <jb@taunais.com>"]
+license = "Apache-2.0"
+description = "Provider abstraction for ITCH message sources (ADR-0012)"
+repository = "https://github.com/joaquinbejar/itch-rs"
+readme = "README.md"
+
+[dependencies]
+itch-protocol = { version = "0.1", path = "../itch-protocol" }
+futures = "0.3"
+async-trait = "0.1"
+bytes = "1"
+thiserror = "1"
+tracing = "0.1"
+tokio = { version = "1", features = ["sync", "time", "rt"] }
+# itch-replay feature added in issue #47
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+
+[features]
+default = []
+
