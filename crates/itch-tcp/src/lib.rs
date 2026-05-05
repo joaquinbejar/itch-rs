@@ -73,14 +73,38 @@ pub type ItchResult<T> = Result<T, TransportError>;
 /// length prefix is a u16 big-endian integer that **includes** the
 /// 1-byte ITCH type tag; total wire bytes per message is
 /// `2 + length`.
+///
+/// The codec carries a small recovery counter so that an oversized
+/// `FrameTooLarge` reject correctly drains the remaining bytes of
+/// the bad frame across multiple subsequent reads — without that,
+/// a partial oversized frame would corrupt the stream once the
+/// rest arrived.
 #[derive(Debug, Clone, Default)]
-pub struct ItchCodec;
+pub struct ItchCodec {
+    /// Bytes still to discard from the next inbound chunks before
+    /// resuming normal length-prefix parsing. Set when an oversized
+    /// frame's announced span hadn't fully arrived yet.
+    pending_skip: usize,
+}
 
 impl Decoder for ItchCodec {
     type Item = Message;
     type Error = TransportError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Message>, TransportError> {
+        // First, drain any leftover bytes from a previous oversized
+        // FrameTooLarge that wasn't fully present at the time of
+        // detection.
+        if self.pending_skip > 0 {
+            let to_drop = self.pending_skip.min(src.len());
+            src.advance(to_drop);
+            self.pending_skip -= to_drop;
+            if self.pending_skip > 0 {
+                // Still more to drop on later reads; nothing to yield yet.
+                return Ok(None);
+            }
+        }
+
         // Need at least 2 bytes to read the length prefix.
         if src.len() < 2 {
             return Ok(None);
@@ -88,19 +112,15 @@ impl Decoder for ItchCodec {
         let len = u16::from_be_bytes([src[0], src[1]]) as usize;
 
         if len > MAX_MESSAGE_LEN {
-            // Drop the length prefix and the announced (oversized)
-            // bytes that have already arrived; the rest of the frame
-            // (if any beyond the buffer) will arrive on later reads
-            // and be silently absorbed by subsequent calls because we
-            // re-track from the next length prefix.
-            //
-            // To avoid a partial-frame zombie, we reset the buffer to
-            // empty if we don't yet have the full announced span;
-            // otherwise we advance exactly past the frame.
+            // Drop the length prefix and the bytes already present;
+            // remember how many more we still need to skip on
+            // subsequent reads so the rest of the oversized payload
+            // is absorbed instead of being mis-parsed as a new prefix.
             let total = 2 + len;
             if src.len() >= total {
                 src.advance(total);
             } else {
+                self.pending_skip = total - src.len();
                 src.clear();
             }
             return Err(TransportError::FrameTooLarge {
@@ -175,11 +195,14 @@ pub type ItchConnection = Framed<TcpStream, ItchCodec>;
 ///
 /// # Errors
 ///
-/// - I/O errors from `TcpStream::connect`.
+/// - I/O errors from `TcpStream::connect` or from setting
+///   `TCP_NODELAY` on the resulting socket.
 pub async fn connect<A: ToSocketAddrs>(addr: A) -> io::Result<ItchConnection> {
     let socket = TcpStream::connect(addr).await?;
-    socket.set_nodelay(true).ok();
-    Ok(Framed::new(socket, ItchCodec))
+    socket.set_nodelay(true)?;
+    let peer = socket.peer_addr().ok();
+    tracing::info!(?peer, "itch-tcp connection established");
+    Ok(Framed::new(socket, ItchCodec::default()))
 }
 
 /// Bind a TCP listener for accepting incoming ITCH connections.
@@ -198,12 +221,13 @@ pub async fn bind<A: ToSocketAddrs>(addr: A) -> io::Result<TcpListener> {
 ///
 /// # Errors
 ///
-/// - I/O errors from `TcpListener::accept`.
+/// - I/O errors from `TcpListener::accept` or from setting
+///   `TCP_NODELAY` on the accepted socket.
 pub async fn accept(listener: &TcpListener) -> io::Result<(ItchConnection, SocketAddr)> {
     let (socket, peer) = listener.accept().await?;
-    socket.set_nodelay(true).ok();
+    socket.set_nodelay(true)?;
     tracing::info!(?peer, "itch-tcp connection accepted");
-    Ok((Framed::new(socket, ItchCodec), peer))
+    Ok((Framed::new(socket, ItchCodec::default()), peer))
 }
 
 #[cfg(test)]
@@ -232,7 +256,7 @@ mod tests {
 
     #[test]
     fn encoder_then_decoder_roundtrip() {
-        let mut codec = ItchCodec;
+        let mut codec = ItchCodec::default();
         let mut buf = BytesMut::new();
         let msg = add_order_fixture();
         codec.encode(msg, &mut buf).expect("encode");
@@ -245,7 +269,7 @@ mod tests {
 
     #[test]
     fn decoder_returns_none_when_starved() {
-        let mut codec = ItchCodec;
+        let mut codec = ItchCodec::default();
         // Less than 2 bytes — no length prefix yet.
         let mut buf = BytesMut::from(&[0x00u8][..]);
         assert!(codec.decode(&mut buf).expect("decode").is_none());
@@ -258,17 +282,16 @@ mod tests {
     }
 
     #[test]
-    fn decoder_drops_oversized_frame_and_resumes() {
-        let mut codec = ItchCodec;
+    fn decoder_drops_oversized_frame_fully_present_and_resumes() {
+        // Case A: the oversized payload is already present in the
+        // buffer — the codec advances past the entire span in one
+        // call.
+        let mut codec = ItchCodec::default();
         let mut buf = BytesMut::new();
-
-        // Announce a frame at MAX + 1 (oversized) followed immediately
-        // by a valid frame.
         let oversized = MAX_MESSAGE_LEN + 1;
         buf.put_u16(oversized as u16);
-        // We don't have the bytes for the oversized frame on this
-        // partial read — the buffer should clear and the codec should
-        // raise FrameTooLarge.
+        buf.resize(2 + oversized, 0); // pad the oversized payload
+
         let err = codec
             .decode(&mut buf)
             .expect_err("oversized must produce FrameTooLarge");
@@ -279,22 +302,55 @@ mod tests {
             }
             other => panic!("expected FrameTooLarge, got {other:?}"),
         }
-        assert!(buf.is_empty(), "buffer cleared");
+        assert!(buf.is_empty(), "full oversized frame consumed");
 
-        // Now feed a valid frame and make sure we can resume.
-        codec
-            .encode(add_order_fixture(), &mut buf)
-            .expect("encode after recovery");
-        let msg = codec
+        // Resume with a valid frame.
+        codec.encode(add_order_fixture(), &mut buf).expect("encode");
+        let msg = codec.decode(&mut buf).expect("decode").expect("frame");
+        assert_eq!(msg, add_order_fixture());
+    }
+
+    #[test]
+    fn decoder_drops_oversized_frame_partial_then_resumes() {
+        // Case B: the oversized payload arrives across multiple
+        // reads. The codec must remember how many bytes still need
+        // to be discarded and only resume parsing once the entire
+        // bad span has been drained.
+        let mut codec = ItchCodec::default();
+        let mut buf = BytesMut::new();
+        let oversized = MAX_MESSAGE_LEN + 1;
+        buf.put_u16(oversized as u16);
+        // First read: only the prefix has arrived.
+        let err = codec
             .decode(&mut buf)
-            .expect("decode after recovery")
-            .expect("frame");
+            .expect_err("oversized must produce FrameTooLarge");
+        assert!(matches!(err, TransportError::FrameTooLarge { .. }));
+
+        // Subsequent reads slowly drain the rest of the oversized
+        // payload. Pretend chunks of 256 bytes arrive at a time.
+        let mut remaining = oversized;
+        while remaining > 0 {
+            let chunk_size = remaining.min(256);
+            buf.resize(chunk_size, 0);
+            // The codec must consume exactly the pending_skip from
+            // this chunk, leaving the buffer empty (or close to it
+            // if a chunk overran into a new prefix — which it doesn't
+            // here).
+            let polled = codec.decode(&mut buf).expect("decode");
+            assert!(polled.is_none(), "still draining oversized payload");
+            remaining -= chunk_size;
+        }
+        assert!(buf.is_empty(), "buffer fully drained");
+
+        // Now a valid frame arrives — must decode cleanly.
+        codec.encode(add_order_fixture(), &mut buf).expect("encode");
+        let msg = codec.decode(&mut buf).expect("decode").expect("frame");
         assert_eq!(msg, add_order_fixture());
     }
 
     #[test]
     fn decoder_bad_inner_frame_does_not_poison_stream() {
-        let mut codec = ItchCodec;
+        let mut codec = ItchCodec::default();
         let mut buf = BytesMut::new();
 
         // Length 1 + tag '~' (unknown) — well-formed prefix but bad tag.
