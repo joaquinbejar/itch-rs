@@ -13,9 +13,49 @@
 //!    2 bytes BE          1-byte tag + body
 //! ```
 //!
-//! The codec rejects any frame larger than [`MAX_MESSAGE_LEN`] (1
-//! KiB) and does not poison the stream on a bad inner frame — it
-//! drops the bad bytes and resumes at the next length prefix.
+//! # Public API
+//!
+//! - [`ItchCodec`] — a [`tokio_util::codec::Decoder`] +
+//!   [`tokio_util::codec::Encoder<Message>`] implementation. Plug it
+//!   into a [`tokio_util::codec::Framed`] in either direction.
+//! - [`ItchConnection`] — a `Framed<TcpStream, ItchCodec>` alias
+//!   that implements [`futures::Stream`] for receiving and
+//!   [`futures::Sink`] for sending.
+//! - [`connect`] — async client helper: dials the address, sets
+//!   `TCP_NODELAY`, and wraps the socket in an [`ItchConnection`].
+//! - [`bind`] / [`accept`] — async server helpers built on
+//!   [`tokio::net::TcpListener`].
+//! - [`MAX_MESSAGE_LEN`] — 1 KiB cap (largest ITCH 5.0 message is
+//!   50 bytes; the cap leaves headroom and bounds memory under
+//!   adversarial input).
+//!
+//! # Stream-poison resistance
+//!
+//! The codec **never poisons the stream** on a bad inner frame:
+//!
+//! - A frame whose body fails [`itch_protocol::Message::decode`]
+//!   yields one [`TransportError::Protocol`] error and the codec
+//!   resumes reading at the next length prefix.
+//! - A frame whose announced length exceeds [`MAX_MESSAGE_LEN`]
+//!   yields one [`TransportError::FrameTooLarge`] and the codec
+//!   uses an internal recovery counter to drain the rest of the
+//!   bad bytes across subsequent reads — partial oversized frames
+//!   do not corrupt the stream once the bytes finally arrive.
+//!
+//! # Example — client
+//!
+//! ```no_run
+//! use futures::StreamExt;
+//! use itch_tcp::connect;
+//!
+//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut conn = connect("127.0.0.1:9100").await?;
+//! while let Some(msg) = conn.next().await {
+//!     let msg = msg?;
+//!     println!("{:?}", msg);
+//! }
+//! # Ok(()) }
+//! ```
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

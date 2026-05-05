@@ -1,18 +1,85 @@
-//! NASDAQ TotalView-ITCH 5.0 message types and binary codec
-//! (workspace scaffold; the public API lands incrementally across
-//! issues #2 – #8).
+//! NASDAQ TotalView-ITCH 5.0 message types and binary codec.
 //!
-//! Once the v0.1 cohort merges, this crate will define the typed
-//! domain model (primitives, enums, message DTOs, the `Message`
-//! enum) and a hand-rolled big-endian codec (`Encode` / `Decode`),
-//! all sync — no I/O, no `async`, no `tokio`.
+//! `itch-protocol` is the leaf crate of the workspace: a strongly
+//! typed domain model on top of a hand-rolled big-endian codec,
+//! with **no I/O, no `async`, no `tokio`** dependencies. Transports
+//! (`itch-tcp`, future `itch-soup`, future `itch-mold`) plug into it
+//! via `tokio_util::codec::Framed`.
 //!
-//! Subsequent crates layer on top:
-//! - `itch-tcp` — naïve length-prefix TCP framing (demos)
-//! - `itch-soup` — SoupBinTCP 3.00 (planned)
-//! - `itch-mold` — MoldUDP64 V1.00 (planned)
+//! # Public API at a glance
 //!
-//! See the workspace `README.md` for the high-level architecture.
+//! - **Primitives** — newtypes for every ITCH 5.0 wire field:
+//!   [`Stock`], [`Mpid`], [`Price4`], [`Price8`], [`Timestamp`],
+//!   [`StockLocate`], [`TrackingNumber`], [`OrderReference`],
+//!   [`MatchNumber`], [`Shares`].
+//! - **Enums** — closed-set ASCII codes turned into Rust enums:
+//!   [`EventCode`], [`Side`], [`MarketCategory`], [`FinancialStatus`],
+//!   [`TradingState`], [`ImbalanceDirection`], [`CrossType`], …
+//!   All implement [`AlphaCoded`] for one-byte conversion.
+//! - **Messages** — 20 DTOs (one per ITCH 5.0 message kind: `S`, `R`,
+//!   `H`, `Y`, `L`, `V`, `W`, `K`, `A`, `F`, `E`, `C`, `X`, `D`, `U`,
+//!   `P`, `Q`, `B`, `I`, `N`) plus a 10-byte [`Header`] and the
+//!   exhaustive [`Message`] enum.
+//! - **Codec** — [`Encode`] and [`Decode`] traits plus
+//!   [`Message::encode`]/[`Message::decode`] for whole frames
+//!   (1-byte tag + body).
+//! - **Errors** — [`ProtocolError`], a `#[non_exhaustive]` leaf
+//!   `thiserror` enum with `Truncated`, `BufferTooSmall`,
+//!   `UnknownMessageType`, and `InvalidEnumCode { field, code }`.
+//!
+//! # The `Encode` / `Decode` contract
+//!
+//! Every message DTO and [`Header`] implements both traits:
+//!
+//! ```text
+//! body_len()       — exact body byte count (excludes the 1-byte tag)
+//! encode_body(buf) — write big-endian wire bytes into `buf`
+//! decode_body(buf) — parse from a slice, validating every field
+//! ```
+//!
+//! [`Message::encode`] writes `1 + body_len()` bytes (tag + body);
+//! [`Message::decode`] parses the same shape and returns the typed
+//! variant. A [`ProtocolError::UnknownMessageType`] is returned for
+//! any tag outside the closed set.
+//!
+//! # `no_std`-friendly note
+//!
+//! Per [ADR-0005](https://github.com/joaquinbejar/itch-rs/blob/main/docs/adr/0005-std-by-default-no-std-opt-in.md),
+//! the codec uses only `core::` and stack arithmetic — no `Vec`, no
+//! `String`, no allocator on the hot path. v0.1 ships with `std`
+//! always on; a `default-features = false` flag lands when the first
+//! `no_std` consumer needs it.
+//!
+//! # Example
+//!
+//! ```
+//! use itch_protocol::{
+//!     AddOrder, Decode, Encode, Header, Message, OrderReference, Price4,
+//!     Shares, Side, Stock, StockLocate, Timestamp, TrackingNumber,
+//! };
+//!
+//! let original = Message::AddOrder(AddOrder {
+//!     header: Header {
+//!         stock_locate: StockLocate::from_u16(1),
+//!         tracking_number: TrackingNumber::from_u16(0),
+//!         timestamp: Timestamp::from_u64(32_400_005_000_000),
+//!     },
+//!     order_ref: OrderReference::from_u64(1001),
+//!     side: Side::Buy,
+//!     shares: Shares::from_u32(500),
+//!     stock: Stock::new("AAPL"),
+//!     price: Price4::from_u32(1_925_000),
+//! });
+//!
+//! let mut buf = vec![0u8; original.encoded_len()];
+//! original.encode(&mut buf).unwrap();
+//!
+//! let decoded = Message::decode(&buf).unwrap();
+//! assert_eq!(original, decoded);
+//! ```
+//!
+//! See the workspace `README.md` for the high-level architecture and
+//! `docs/PROTOCOL-SPEC.md` for the wire format.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
