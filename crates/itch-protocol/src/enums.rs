@@ -451,6 +451,7 @@ mod tests {
                     assert_eq!(field, <$enum_ty as AlphaCoded>::FIELD);
                     assert_eq!(code, $bad);
                 }
+                other => panic!("expected InvalidEnumCode, got {other:?}"),
             }
         }};
     }
@@ -706,6 +707,7 @@ mod tests {
                 assert_eq!(field, "Side");
                 assert_eq!(code, b'Z');
             }
+            other => panic!("expected InvalidEnumCode, got {other:?}"),
         }
     }
 

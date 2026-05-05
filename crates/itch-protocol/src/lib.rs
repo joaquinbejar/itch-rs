@@ -17,10 +17,13 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod codec;
 pub mod enums;
 pub mod error;
 pub mod messages;
 pub mod primitives;
+
+pub use codec::{Decode, Encode};
 
 pub use enums::{
     AlphaCoded, Authenticity, BreachedLevel, CrossType, EventCode, FinancialStatus,
