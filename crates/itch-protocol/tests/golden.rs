@@ -25,9 +25,10 @@ fn assert_golden(bytes: &[u8], expected: &Message) {
 }
 
 // Common header bytes used across most goldens:
-//   stock_locate    = 0x0001
-//   tracking_number = 0x0002
-//   timestamp       = 0x0000_0012_3456_7800 (u48, low 6 bytes)
+//   stock_locate    = 0x0001                      → wire `00 01`
+//   tracking_number = 0x0002                      → wire `00 02`
+//   timestamp       = 0x0000_1234_5678 (305 419 896 ns since midnight)
+//                                                 → wire `00 00 12 34 56 78` (u48)
 fn stock_header() -> Header {
     Header {
         stock_locate: StockLocate::from_u16(1),
@@ -79,21 +80,23 @@ fn golden_system_event_start_of_messages() {
 fn golden_stock_directory_aapl() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
-        b'R',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,  // header (10)
-        b'A', b'A', b'P', b'L', b' ', b' ', b' ', b' ',              // stock (8)
+        b'R',                                                          // tag
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
+        b'A', b'A', b'P', b'L', b' ', b' ', b' ', b' ',                // stock = "AAPL    "
         b'Q',                                                          // market_category = NasdaqGlobalSelect
         b'N',                                                          // financial_status = Normal
         0x00, 0x00, 0x00, 0x64,                                        // round_lot_size = 100
         b'N',                                                          // round_lots_only = No
         b'C',                                                          // issue_classification
-        b' ', b' ',                                                    // issue_subtype
+        b' ', b' ',                                                    // issue_subtype = "  "
         b'P',                                                          // authenticity = Live
         b'N',                                                          // short_sale_threshold = No
         b'N',                                                          // ipo_flag = No
         b'1',                                                          // luld_reference_price_tier = Tier1
         b'N',                                                          // etp_flag = No
-        0x00, 0x00, 0x00, 0x00,                                        // etp_leverage_factor
+        0x00, 0x00, 0x00, 0x00,                                        // etp_leverage_factor = 0
         b'N',                                                          // inverse_indicator = No
     ];
     assert_golden(
@@ -127,7 +130,9 @@ fn golden_stock_trading_action_aapl_trading() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'H',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         b'A', b'A', b'P', b'L', b' ', b' ', b' ', b' ',
         b'T',                          // trading_state = Trading
         b' ',                          // reserved
@@ -154,7 +159,9 @@ fn golden_reg_sho_restriction_in_effect() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'Y',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         b'T', b'S', b'L', b'A', b' ', b' ', b' ', b' ',
         b'2',                          // reg_sho_action = InEffect
     ];
@@ -177,7 +184,9 @@ fn golden_market_participant_position_aapl_nsdq_active() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'L',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         b'N', b'S', b'D', b'Q',                                        // mpid
         b'A', b'A', b'P', b'L', b' ', b' ', b' ', b' ',                // stock
         b'Y',                                                           // primary_market_maker = Yes
@@ -206,7 +215,9 @@ fn golden_mwcb_decline_level() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'V',
-        0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,    // header
+        0x00, 0x00,                                                    // stock_locate = 0 (session-level)
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x17, 0x48, 0x76, 0xE8, 0x00,                // level1 = 100_000_000_000
         0x00, 0x00, 0x00, 0x2E, 0x90, 0xED, 0xD0, 0x00,                // level2 = 200_000_000_000
         0x00, 0x00, 0x00, 0x45, 0xD9, 0x64, 0xB8, 0x00,                // level3 = 300_000_000_000
@@ -231,7 +242,9 @@ fn golden_mwcb_status_level2() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'W',
-        0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x00,                                                    // stock_locate = 0 (session-level)
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         b'2',
     ];
     assert_golden(
@@ -252,7 +265,9 @@ fn golden_ipo_quoting_period_update() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'K',
-        0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x00,                                                    // stock_locate = 0 (session-level)
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         b'N', b'E', b'W', b'C', b'O', b' ', b' ', b' ',
         0x00, 0x00, 0x85, 0x98,                                         // 34_200 (09:30 ET)
         b'A',                                                            // qualifier = Anticipated
@@ -279,7 +294,9 @@ fn golden_add_order_aapl_buy_500_at_192_50() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'A',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,    // header
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE9,                // order_ref = 1001
         b'B',                                                           // side = Buy
         0x00, 0x00, 0x01, 0xF4,                                         // shares = 500
@@ -308,7 +325,9 @@ fn golden_add_order_with_mpid_aapl_sell_300_nsdq() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'F',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xEA,                // order_ref = 1002
         b'S',                                                           // side = Sell
         0x00, 0x00, 0x01, 0x2C,                                         // shares = 300
@@ -339,7 +358,9 @@ fn golden_order_executed() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'E',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE9,                // order_ref = 1001
         0x00, 0x00, 0x00, 0x64,                                         // executed_shares = 100
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A,                 // match_number = 42
@@ -364,7 +385,9 @@ fn golden_order_executed_with_price() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'C',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE9,                // order_ref = 1001
         0x00, 0x00, 0x00, 0x32,                                         // executed_shares = 50
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2B,                 // match_number = 43
@@ -393,7 +416,9 @@ fn golden_order_cancel() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'X',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE9,                // order_ref = 1001
         0x00, 0x00, 0x00, 0x4B,                                         // cancelled_shares = 75
     ];
@@ -416,7 +441,9 @@ fn golden_order_delete() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'D',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE9,                // order_ref = 1001
     ];
     assert_golden(
@@ -437,7 +464,9 @@ fn golden_order_replace() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'U',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE9,                // original_order_ref = 1001
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD1,                // new_order_ref = 2001
         0x00, 0x00, 0x01, 0xA9,                                         // shares = 425
@@ -465,7 +494,9 @@ fn golden_trade_non_cross_post_2014_quirk() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'P',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,                // order_ref = 0
         b'B',                                                           // side = Buy
         0x00, 0x00, 0x00, 0xC8,                                         // shares = 200
@@ -493,7 +524,9 @@ fn golden_trade_non_cross_pre_2014_shape() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'P',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0xD2,                // order_ref = 1234
         b'S',                                                           // side = Sell
         0x00, 0x00, 0x00, 0x96,                                         // shares = 150
@@ -524,7 +557,9 @@ fn golden_cross_trade_closing() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'Q',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x42, 0x40,                // shares = 1_000_000 (u64)
         b'S', b'P', b'Y', b' ', b' ', b' ', b' ', b' ',
         0x00, 0x3D, 0x09, 0x00,                                         // cross_price = 4_000_000
@@ -553,7 +588,9 @@ fn golden_broken_trade() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'B',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x79, 0x32,                // match_number = 424242
     ];
     assert_golden(
@@ -574,7 +611,9 @@ fn golden_noii_closing_buy_imbalance() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'I',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x42, 0x40,                // paired_shares = 1_000_000
         0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xA1, 0x20,                // imbalance_shares = 500_000
         b'B',                                                           // imbalance_direction = Buy
@@ -611,7 +650,9 @@ fn golden_retail_price_improvement_both_sides() {
     #[rustfmt::skip]
     const BYTES: &[u8] = &[
         b'N',
-        0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x12, 0x34, 0x56, 0x78,
+        0x00, 0x01,                                                    // stock_locate = 1
+        0x00, 0x02,                                                    // tracking_number = 2
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78,                            // timestamp (u48)
         b'A', b'A', b'P', b'L', b' ', b' ', b' ', b' ',
         b'A',                          // interest_flag = BothSides
     ];
