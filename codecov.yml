@@ -1,0 +1,26 @@
+codecov:
+  require_ci_to_pass: yes
+  notify:
+    after_n_builds: 1
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+        threshold: 5%
+
+  ignore:
+    - "**/benches/**"
+    - "**/fuzz/**"
+    - "**/tests/**"
+    - "**/examples/**"
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false

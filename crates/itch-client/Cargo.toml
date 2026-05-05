@@ -1,0 +1,23 @@
+[package]
+name        = "itch-client"
+description = "Demo ITCH 5.0 subscriber binary (decodes and prints messages)"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+keywords.workspace     = true
+categories.workspace   = true
+
+[[bin]]
+name = "itch-client"
+path = "src/main.rs"
+
+[dependencies]
+itch-protocol      = { workspace = true }
+itch-tcp           = { workspace = true }
+tokio              = { workspace = true, features = ["net", "rt-multi-thread", "macros", "signal"] }
+futures            = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
