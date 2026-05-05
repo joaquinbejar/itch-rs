@@ -10,7 +10,10 @@
 
 use itch_protocol::*;
 
-const SCRATCH: usize = 64;
+// Per-message buffers are sized exactly to `Message::encoded_len()`
+// inside `roundtrip()`. The largest ITCH 5.0 message is 50 bytes;
+// the assert on `n == encoded_len()` catches any drift between
+// `body_len()` and what `encode_body()` actually wrote.
 
 fn header() -> Header {
     Header {
@@ -28,7 +31,9 @@ fn header_zero_locate() -> Header {
 }
 
 fn roundtrip(m: Message) {
-    let mut buf = [0u8; SCRATCH];
+    // Size the buffer from the message itself — catches drift
+    // between `body_len()` and the bytes actually written.
+    let mut buf = vec![0u8; m.encoded_len()];
     let n = m.encode(&mut buf).expect("encode");
     assert_eq!(n, m.encoded_len(), "encoded_len mismatch for {m:?}");
     let decoded = Message::decode(&buf[..n]).expect("decode");
@@ -169,6 +174,46 @@ fn roundtrip_add_order() {
             price: Price4::from_u32(1_925_000),
         }));
     }
+}
+
+#[test]
+fn roundtrip_add_order_with_full_8byte_stock_no_padding() {
+    roundtrip(Message::AddOrder(AddOrder {
+        header: header(),
+        order_ref: OrderReference::from_u64(1003),
+        side: Side::Buy,
+        shares: Shares::from_u32(100),
+        stock: Stock::from_bytes(*b"LONGSYMB"),
+        price: Price4::from_u32(2_000_000),
+    }));
+}
+
+#[test]
+fn roundtrip_add_order_with_embedded_space_stock() {
+    roundtrip(Message::AddOrder(AddOrder {
+        header: header(),
+        order_ref: OrderReference::from_u64(1004),
+        side: Side::Buy,
+        shares: Shares::from_u32(100),
+        stock: Stock::from_bytes(*b"AB CD   "),
+        price: Price4::from_u32(2_000_000),
+    }));
+}
+
+#[test]
+fn roundtrip_add_order_max_field_values() {
+    roundtrip(Message::AddOrder(AddOrder {
+        header: Header {
+            stock_locate: StockLocate::from_u16(u16::MAX),
+            tracking_number: TrackingNumber::from_u16(u16::MAX),
+            timestamp: Timestamp::from_u64((1u64 << 48) - 1),
+        },
+        order_ref: OrderReference::from_u64(u64::MAX),
+        side: Side::Sell,
+        shares: Shares::from_u32(u32::MAX),
+        stock: Stock::from_bytes(*b"ZZZZZZZZ"),
+        price: Price4::from_u32(u32::MAX),
+    }));
 }
 
 #[test]
@@ -335,33 +380,161 @@ fn roundtrip_retail_price_improvement() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn back_to_back_sweep_decodes_in_order() {
-    let messages = vec![
+fn back_to_back_sweep_all_twenty_kinds_decodes_in_order() {
+    // Stream-level regression: encode one of every kind into a
+    // single concatenated buffer, then decode the whole stream and
+    // assert each decoded message matches the expected one in order.
+    // Catches length-advancement bugs that per-kind unit tests miss.
+    let h = header();
+    let h0 = header_zero_locate();
+    let messages: Vec<Message> = vec![
         Message::SystemEvent(SystemEvent {
-            header: header_zero_locate(),
+            header: h0,
             event_code: EventCode::StartOfMessages,
         }),
-        Message::AddOrder(AddOrder {
-            header: header(),
-            order_ref: OrderReference::from_u64(1),
-            side: Side::Buy,
-            shares: Shares::from_u32(100),
+        Message::StockDirectory(StockDirectory {
+            header: h,
             stock: Stock::new("AAPL"),
-            price: Price4::from_u32(1_900_000),
+            market_category: MarketCategory::NasdaqGlobalSelect,
+            financial_status: FinancialStatus::Normal,
+            round_lot_size: Shares::from_u32(100),
+            round_lots_only: YesNo::No,
+            issue_classification: b'C',
+            issue_subtype: *b"  ",
+            authenticity: Authenticity::Live,
+            short_sale_threshold: YesNo::No,
+            ipo_flag: YesNo::No,
+            luld_reference_price_tier: LuldTier::Tier1,
+            etp_flag: YesNo::No,
+            etp_leverage_factor: 0,
+            inverse_indicator: YesNo::No,
+        }),
+        Message::StockTradingAction(StockTradingAction {
+            header: h,
+            stock: Stock::new("AAPL"),
+            trading_state: TradingState::Trading,
+            reserved: b' ',
+            reason: *b"NORM",
+        }),
+        Message::RegShoRestriction(RegShoRestriction {
+            header: h,
+            stock: Stock::new("TSLA"),
+            reg_sho_action: RegShoAction::InEffect,
+        }),
+        Message::MarketParticipantPosition(MarketParticipantPosition {
+            header: h,
+            mpid: Mpid::new("NSDQ"),
+            stock: Stock::new("AAPL"),
+            primary_market_maker: YesNo::Yes,
+            market_maker_mode: MarketMakerMode::Normal,
+            market_participant_state: MarketParticipantState::Active,
+        }),
+        Message::MwcbDeclineLevel(MwcbDeclineLevel {
+            header: h0,
+            level1: Price8::from_u64(100_000_000_000),
+            level2: Price8::from_u64(200_000_000_000),
+            level3: Price8::from_u64(300_000_000_000),
+        }),
+        Message::MwcbStatus(MwcbStatus {
+            header: h0,
+            breached_level: BreachedLevel::Level2,
+        }),
+        Message::IpoQuotingPeriodUpdate(IpoQuotingPeriodUpdate {
+            header: h0,
+            stock: Stock::new("NEWCO"),
+            ipo_quotation_release_time: 34_200,
+            ipo_quotation_release_qualifier: IpoReleaseQualifier::Anticipated,
+            ipo_price: Price4::from_u32(150_0000),
+        }),
+        Message::AddOrder(AddOrder {
+            header: h,
+            order_ref: OrderReference::from_u64(1001),
+            side: Side::Buy,
+            shares: Shares::from_u32(500),
+            stock: Stock::new("AAPL"),
+            price: Price4::from_u32(1_925_000),
+        }),
+        Message::AddOrderWithMpid(AddOrderWithMpid {
+            header: h,
+            order_ref: OrderReference::from_u64(1002),
+            side: Side::Sell,
+            shares: Shares::from_u32(300),
+            stock: Stock::new("AAPL"),
+            price: Price4::from_u32(1_926_000),
+            attribution: Mpid::new("NSDQ"),
         }),
         Message::OrderExecuted(OrderExecuted {
-            header: header(),
-            order_ref: OrderReference::from_u64(1),
+            header: h,
+            order_ref: OrderReference::from_u64(1001),
+            executed_shares: Shares::from_u32(100),
+            match_number: MatchNumber::from_u64(42),
+        }),
+        Message::OrderExecutedWithPrice(OrderExecutedWithPrice {
+            header: h,
+            order_ref: OrderReference::from_u64(1001),
             executed_shares: Shares::from_u32(50),
-            match_number: MatchNumber::from_u64(11),
+            match_number: MatchNumber::from_u64(43),
+            printable: Printable::Printable,
+            execution_price: Price4::from_u32(1_924_500),
+        }),
+        Message::OrderCancel(OrderCancel {
+            header: h,
+            order_ref: OrderReference::from_u64(1001),
+            cancelled_shares: Shares::from_u32(75),
         }),
         Message::OrderDelete(OrderDelete {
-            header: header(),
-            order_ref: OrderReference::from_u64(1),
+            header: h,
+            order_ref: OrderReference::from_u64(1001),
+        }),
+        Message::OrderReplace(OrderReplace {
+            header: h,
+            original_order_ref: OrderReference::from_u64(1001),
+            new_order_ref: OrderReference::from_u64(2001),
+            shares: Shares::from_u32(425),
+            price: Price4::from_u32(1_927_500),
+        }),
+        Message::TradeNonCross(TradeNonCross {
+            header: h,
+            order_ref: OrderReference::from_u64(0),
+            side: Side::Buy,
+            shares: Shares::from_u32(200),
+            stock: Stock::new("AAPL"),
+            price: Price4::from_u32(1_925_500),
+            match_number: MatchNumber::from_u64(7777),
+        }),
+        Message::CrossTrade(CrossTrade {
+            header: h,
+            shares: 1_000_000,
+            stock: Stock::new("SPY"),
+            cross_price: Price4::from_u32(4_000_000),
+            match_number: MatchNumber::from_u64(99),
+            cross_type: CrossType::Closing,
+        }),
+        Message::BrokenTrade(BrokenTrade {
+            header: h,
+            match_number: MatchNumber::from_u64(424242),
+        }),
+        Message::Noii(Noii {
+            header: h,
+            paired_shares: 1_000_000,
+            imbalance_shares: 500_000,
+            imbalance_direction: ImbalanceDirection::Buy,
+            stock: Stock::new("QQQ"),
+            far_price: Price4::from_u32(3_700_000),
+            near_price: Price4::from_u32(3_710_000),
+            current_reference_price: Price4::from_u32(3_705_000),
+            cross_type: CrossType::Closing,
+            price_variation: PriceVariation::Pct1To2,
+        }),
+        Message::RetailPriceImprovement(RetailPriceImprovement {
+            header: h,
+            stock: Stock::new("AAPL"),
+            interest_flag: RpiInterestFlag::BothSides,
         }),
     ];
 
-    // Encode all into a single concatenated buffer.
+    assert_eq!(messages.len(), 20, "must cover all 20 kinds");
+
     let total: usize = messages.iter().map(|m| m.encoded_len()).sum();
     let mut buf = vec![0u8; total];
     let mut off = 0;
@@ -371,7 +544,6 @@ fn back_to_back_sweep_decodes_in_order() {
     }
     assert_eq!(off, total);
 
-    // Decode one-by-one and confirm equality.
     let mut cursor = 0;
     for expected in &messages {
         let decoded = Message::decode(&buf[cursor..]).expect("decode");
