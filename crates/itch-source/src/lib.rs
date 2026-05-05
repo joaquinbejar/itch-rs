@@ -17,15 +17,15 @@
 //! keeping the API ergonomic for users who already speak `futures::Stream`.
 //!
 //! Traits in this crate:
-//! - [`MessageSource`](source::MessageSource) — marker over message stream
-//! - [`SeqStore`](seqstore::SeqStore) — durable frame storage (async, with gap recovery)
-//! - [`SubscriptionPolicy`](policy::SubscriptionPolicy) — warmup-only policy (auth TBD)
+//! - [`MessageSource`] — marker over message stream
+//! - [`SeqStore`] — durable frame storage (async, with gap recovery)
+//! - [`SubscriptionPolicy`] — warmup-only policy (auth TBD)
 //!
 //! Default implementations provided in follow-up issues.
 //!
 //! ## Error Handling
 //!
-//! [`SourceError`](source::SourceError) has three variants:
+//! [`SourceError`] has three variants:
 //! - `Exhausted` — source produced fewer messages than expected (cleanly)
 //! - `Backend(dyn Error)` — backing store failed (transient or fatal)
 //! - `Invariant(&'static str)` — internal contract violated (panic-level)
