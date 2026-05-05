@@ -47,7 +47,10 @@ pub mod policy;
 pub mod seqstore;
 /// Message sources and error types.
 pub mod source;
+/// Canonical synthetic session fixture (all 20 ITCH message kinds).
+pub mod synthetic;
 
 pub use policy::SubscriptionPolicy;
 pub use seqstore::SeqStore;
 pub use source::{MessageSource, SourceError};
+pub use synthetic::canonical_session;
