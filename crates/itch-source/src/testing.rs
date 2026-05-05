@@ -36,7 +36,7 @@ fn fixture(code: EventCode) -> Message {
 ///
 /// `NullSeqStore` is exempt from the "store-then-read" assertions
 /// because it advertises itself as drop-everything; this helper
-/// special-cases that by reading `earliest()` after `store(1, _)` —
+/// special-cases that by reading `latest()` after `store(1, _)` —
 /// if it stays `0`, the implementation is treated as a "drop
 /// everything" `SeqStore` and only the empty-store assertions are
 /// enforced.
