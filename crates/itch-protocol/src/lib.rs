@@ -17,8 +17,17 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod enums;
+pub mod error;
 pub mod primitives;
 
+pub use enums::{
+    AlphaCoded, Authenticity, BreachedLevel, CrossType, EventCode, FinancialStatus,
+    ImbalanceDirection, IpoReleaseQualifier, LuldTier, MarketCategory, MarketMakerMode,
+    MarketParticipantState, PriceVariation, Printable, RegShoAction, RpiInterestFlag, Side,
+    TradingState, YesNo,
+};
+pub use error::ProtocolError;
 pub use primitives::{
     MatchNumber, Mpid, OrderReference, Price4, Price8, Shares, Stock, StockLocate, Timestamp,
     TimestampError, TrackingNumber,
