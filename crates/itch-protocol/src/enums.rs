@@ -34,7 +34,9 @@ pub trait AlphaCoded: Sized + Copy {
 }
 
 /// Declares a closed-set ASCII enum and the matching [`AlphaCoded`]
-/// impl + unit tests in one expansion.
+/// impl in one expansion. Round-trip and unknown-byte tests live in
+/// the parent module's `#[cfg(test)] mod tests` block — the macro
+/// itself does not emit tests.
 ///
 /// Usage:
 /// ```ignore
@@ -126,7 +128,7 @@ enum_alpha! {
         NasdaqGlobalMarket = b'G',
         /// `S` — NASDAQ Capital Market.
         NasdaqCapitalMarket = b'S',
-        /// `N` — NYSE.
+        /// `A` — NYSE MKT (formerly NYSE Amex / AMEX).
         NyseMkt            = b'A',
         /// `N` — NYSE Listed.
         Nyse               = b'N',

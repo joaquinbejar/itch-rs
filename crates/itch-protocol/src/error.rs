@@ -7,11 +7,18 @@
 
 use thiserror::Error;
 
-/// Every fallible `itch-protocol` operation returns this enum.
+/// Codec-layer errors returned by `Encode` / `Decode` and the
+/// closed-set [`AlphaCoded`](crate::AlphaCoded) decoders.
 ///
-/// New variants may be added in minor releases; consumers should
-/// match exhaustively with a fallback arm or use the variant-specific
-/// helpers exposed elsewhere in the crate.
+/// Other fallible APIs in this crate (notably the primitives'
+/// constructors such as [`Timestamp::try_new`](crate::Timestamp::try_new))
+/// have their own typed errors so they can stay independent of
+/// codec evolution.
+///
+/// `ProtocolError` is `#[non_exhaustive]`: new variants may be added
+/// in minor releases as the codec grows. Consumers should match
+/// exhaustively with a fallback arm or use the variant-specific
+/// helpers.
 #[non_exhaustive]
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ProtocolError {
