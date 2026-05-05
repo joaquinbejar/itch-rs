@@ -92,7 +92,30 @@ impl Default for EventCode {
 // ---------------------------------------------------------------------------
 
 /// `R` Stock Directory. Body 38 B (10 header + 28 payload).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+///
+/// Wire layout (body offsets, after the 10-byte header):
+///
+/// | Body offset | Length | Field                       |
+/// |------------:|-------:|-----------------------------|
+/// | 10          | 8      | `stock`                     |
+/// | 18          | 1      | `market_category`           |
+/// | 19          | 1      | `financial_status`          |
+/// | 20          | 4      | `round_lot_size`            |
+/// | 24          | 1      | `round_lots_only`           |
+/// | 25          | 1      | `issue_classification`      |
+/// | 26          | 2      | `issue_subtype`             |
+/// | 28          | 1      | `authenticity`              |
+/// | 29          | 1      | `short_sale_threshold`      |
+/// | 30          | 1      | `ipo_flag`                  |
+/// | 31          | 1      | `luld_reference_price_tier` |
+/// | 32          | 1      | `etp_flag`                  |
+/// | 33          | 4      | `etp_leverage_factor`       |
+/// | 37          | 1      | `inverse_indicator`         |
+///
+/// `Default` returns a struct whose ASCII byte fields
+/// (`issue_classification`, `issue_subtype`) are space-padded
+/// (`0x20`), matching the spec's right-pad-with-spaces convention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StockDirectory {
     /// Common header.
     pub header: Header,
@@ -132,6 +155,28 @@ impl StockDirectory {
     pub const BODY_LEN: usize = 38;
 }
 
+impl Default for StockDirectory {
+    fn default() -> Self {
+        Self {
+            header: Header::default(),
+            stock: Stock::default(),
+            market_category: MarketCategory::default(),
+            financial_status: FinancialStatus::default(),
+            round_lot_size: Shares::default(),
+            round_lots_only: YesNo::default(),
+            issue_classification: b' ',
+            issue_subtype: [b' '; 2],
+            authenticity: Authenticity::default(),
+            short_sale_threshold: YesNo::default(),
+            ipo_flag: YesNo::default(),
+            luld_reference_price_tier: LuldTier::default(),
+            etp_flag: YesNo::default(),
+            etp_leverage_factor: 0,
+            inverse_indicator: YesNo::default(),
+        }
+    }
+}
+
 impl Default for MarketCategory {
     fn default() -> Self {
         Self::Unavailable
@@ -167,7 +212,21 @@ impl Default for LuldTier {
 // ---------------------------------------------------------------------------
 
 /// `H` Stock Trading Action. Body 24 B (10 header + 14 payload).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+///
+/// Wire layout (body offsets):
+///
+/// | Body offset | Length | Field           |
+/// |------------:|-------:|-----------------|
+/// | 10          | 8      | `stock`         |
+/// | 18          | 1      | `trading_state` |
+/// | 19          | 1      | `reserved`      |
+/// | 20          | 4      | `reason`        |
+///
+/// `Default` returns a struct whose `reason` and `reserved` bytes
+/// are space-padded (`0x20`) — matches the spec's
+/// right-pad-with-spaces convention. The reserved byte's spec
+/// default is also a space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StockTradingAction {
     /// Common header.
     pub header: Header,
@@ -185,6 +244,18 @@ pub struct StockTradingAction {
 impl StockTradingAction {
     /// Body size in bytes.
     pub const BODY_LEN: usize = 24;
+}
+
+impl Default for StockTradingAction {
+    fn default() -> Self {
+        Self {
+            header: Header::default(),
+            stock: Stock::default(),
+            trading_state: TradingState::default(),
+            reserved: b' ',
+            reason: [b' '; 4],
+        }
+    }
 }
 
 impl Default for TradingState {
@@ -346,6 +417,16 @@ impl Default for IpoReleaseQualifier {
 // ---------------------------------------------------------------------------
 
 /// `A` Add Order — No MPID. Body 35 B (10 header + 25 payload).
+///
+/// Wire layout (body offsets):
+///
+/// | Body offset | Length | Field       |
+/// |------------:|-------:|-------------|
+/// | 10          | 8      | `order_ref` |
+/// | 18          | 1      | `side`      |
+/// | 19          | 4      | `shares`    |
+/// | 23          | 8      | `stock`     |
+/// | 31          | 4      | `price`     |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct AddOrder {
     /// Common header.
@@ -381,6 +462,17 @@ impl Default for Side {
 ///
 /// Same shape as [`AddOrder`] plus a 4-byte broker attribution
 /// suffix.
+///
+/// Wire layout (body offsets):
+///
+/// | Body offset | Length | Field         |
+/// |------------:|-------:|---------------|
+/// | 10          | 8      | `order_ref`   |
+/// | 18          | 1      | `side`        |
+/// | 19          | 4      | `shares`      |
+/// | 23          | 8      | `stock`       |
+/// | 31          | 4      | `price`       |
+/// | 35          | 4      | `attribution` |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct AddOrderWithMpid {
     /// Common header.
@@ -513,6 +605,15 @@ impl OrderDelete {
 ///
 /// Cancel + new order in one message; the new order receives a new
 /// reference number and (per spec) loses queue priority.
+///
+/// Wire layout (body offsets):
+///
+/// | Body offset | Length | Field                |
+/// |------------:|-------:|----------------------|
+/// | 10          | 8      | `original_order_ref` |
+/// | 18          | 8      | `new_order_ref`      |
+/// | 26          | 4      | `shares`             |
+/// | 30          | 4      | `price`              |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct OrderReplace {
     /// Common header.
@@ -633,6 +734,20 @@ impl BrokenTrade {
 /// (10 header + 39 payload).
 ///
 /// Issued every 5 seconds prior to a NASDAQ cross.
+///
+/// Wire layout (body offsets):
+///
+/// | Body offset | Length | Field                     |
+/// |------------:|-------:|---------------------------|
+/// | 10          | 8      | `paired_shares`           |
+/// | 18          | 8      | `imbalance_shares`        |
+/// | 26          | 1      | `imbalance_direction`     |
+/// | 27          | 8      | `stock`                   |
+/// | 35          | 4      | `far_price`               |
+/// | 39          | 4      | `near_price`              |
+/// | 43          | 4      | `current_reference_price` |
+/// | 47          | 1      | `cross_type`              |
+/// | 48          | 1      | `price_variation`         |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Noii {
     /// Common header.
