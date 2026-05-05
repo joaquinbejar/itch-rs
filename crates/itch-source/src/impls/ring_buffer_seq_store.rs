@@ -1,14 +1,16 @@
 //! `RingBufferSeqStore` — bounded in-memory `SeqStore`.
 //!
-//! Sequences are persisted into a `VecDeque` keyed by sequence
-//! number. When the deque reaches `capacity`, the oldest entry is
-//! evicted (advancing `earliest`).
+//! Sequences are persisted into a `BTreeMap<u64, Message>` so that
+//! lookups, range queries, and `latest()`/`earliest()` are
+//! `O(log n)` instead of `O(n)`, regardless of insertion order. When
+//! the map reaches `capacity`, the lowest-keyed entry is evicted
+//! (advancing `earliest`).
 //!
 //! Concurrency: safe under one writer + many readers via
 //! `tokio::sync::RwLock`. (No `parking_lot` — banned by
 //! `rules/global_rules.md`.)
 
-use std::collections::VecDeque;
+use std::collections::BTreeMap;
 
 use itch_protocol::Message;
 use thiserror::Error;
@@ -32,7 +34,7 @@ pub enum RingBufferSeqStoreError {
         seq: u64,
     },
 
-    /// The internal invariant of the ring deque was violated.
+    /// The internal invariant of the ring map was violated.
     #[error("ring buffer invariant: {reason}")]
     BackingStore {
         /// Description of the violated invariant.
@@ -40,16 +42,41 @@ pub enum RingBufferSeqStoreError {
     },
 }
 
-/// Bounded in-memory ring `SeqStore`.
+/// Bounded in-memory `SeqStore`.
 ///
-/// Holds at most `capacity` frames; on overflow the oldest is
-/// dropped and `earliest()` advances. Stores are idempotent on
-/// `(seq, msg)`; storing a different `msg` at an already-occupied
-/// `seq` returns [`RingBufferSeqStoreError::SequenceConflict`].
+/// Holds at most `capacity` frames; on overflow the lowest-keyed
+/// entry is dropped. Stores are idempotent on `(seq, msg)`;
+/// storing a different `msg` at an already-occupied `seq` returns
+/// [`RingBufferSeqStoreError::SequenceConflict`].
+///
+/// Backed by `BTreeMap`. Per-operation costs:
+///
+/// - `store` — `O(log n)` insert.
+/// - `range(from, count)` — `O(log n + k)` where `k` is the
+///   returned length (every returned entry is walked once).
+/// - `latest` / `earliest` — `O(log n)` key lookup.
+///
+/// **Out-of-order inserts.** The contract requires
+/// `latest() = "highest sequence ever stored"`. The store keeps a
+/// monotonic high-water mark internally so that `latest()` never
+/// moves backwards even if a smaller sequence is stored later
+/// (e.g. `store(5)` then `store(2)` with capacity 1).
+/// `earliest()` returns the lowest currently retained key — note
+/// that on out-of-order inserts that hit the capacity cap, the
+/// store evicts the current minimum and inserts the new key, so
+/// `earliest()` may move *down* (not just up) compared to a
+/// previous read.
 #[derive(Debug)]
 pub struct RingBufferSeqStore {
     capacity: usize,
-    inner: RwLock<VecDeque<(u64, Message)>>,
+    inner: RwLock<Inner>,
+}
+
+/// Combined map + monotonic high-water mark held under one lock.
+#[derive(Debug, Default)]
+struct Inner {
+    map: BTreeMap<u64, Message>,
+    max_seen: u64,
 }
 
 impl RingBufferSeqStore {
@@ -70,7 +97,7 @@ impl RingBufferSeqStore {
         let capacity = capacity.max(1);
         Self {
             capacity,
-            inner: RwLock::new(VecDeque::with_capacity(capacity)),
+            inner: RwLock::new(Inner::default()),
         }
     }
 
@@ -94,19 +121,32 @@ impl SeqStore for RingBufferSeqStore {
     async fn store(&self, seq: u64, msg: &Message) -> Result<(), Self::Error> {
         let mut guard = self.inner.write().await;
 
-        // Idempotent: if `seq` is already present, accept identical
-        // re-stores and reject a different message.
-        if let Some(existing) = guard.iter().find(|(s, _)| *s == seq) {
-            if existing.1 == *msg {
+        // Idempotent on (seq, msg); reject re-bind to different msg.
+        if let Some(existing) = guard.map.get(&seq) {
+            if existing == msg {
+                // Still update the high-water mark in case the
+                // re-store is the highest seen so far.
+                if seq > guard.max_seen {
+                    guard.max_seen = seq;
+                }
                 return Ok(());
             }
             return Err(RingBufferSeqStoreError::SequenceConflict { seq });
         }
 
-        if guard.len() == self.capacity {
-            guard.pop_front();
+        if guard.map.len() == self.capacity {
+            // Evict the lowest-keyed entry. With out-of-order
+            // inserts, this may make the new minimum lower than the
+            // previously-evicted one — that is documented on
+            // `RingBufferSeqStore`.
+            if let Some((&first, _)) = guard.map.iter().next() {
+                guard.map.remove(&first);
+            }
         }
-        guard.push_back((seq, *msg));
+        guard.map.insert(seq, *msg);
+        if seq > guard.max_seen {
+            guard.max_seen = seq;
+        }
         Ok(())
     }
 
@@ -115,16 +155,13 @@ impl SeqStore for RingBufferSeqStore {
             return Ok(Vec::new());
         }
         let guard = self.inner.read().await;
-        if guard.is_empty() {
+        if guard.map.is_empty() {
             return Ok(Vec::new());
         }
 
-        let mut out = Vec::with_capacity(count.min(guard.len()));
+        let mut out = Vec::with_capacity(count.min(guard.map.len()));
         let mut expected = from;
-        for &(s, m) in guard.iter() {
-            if s < from {
-                continue;
-            }
+        for (&s, &m) in guard.map.range(from..) {
             if s != expected {
                 // Gap — stop. Contract: `range` MUST NOT skip
                 // missing sequences.
@@ -140,13 +177,17 @@ impl SeqStore for RingBufferSeqStore {
     }
 
     async fn latest(&self) -> Result<u64, Self::Error> {
+        // High-water mark — never moves backwards, per the contract
+        // ("highest sequence ever stored").
         let guard = self.inner.read().await;
-        Ok(guard.back().map(|(s, _)| *s).unwrap_or(0))
+        Ok(guard.max_seen)
     }
 
     async fn earliest(&self) -> Result<u64, Self::Error> {
+        // Lowest *currently retained* key. May decrease over time
+        // if out-of-order inserts hit the capacity cap.
         let guard = self.inner.read().await;
-        Ok(guard.front().map(|(s, _)| *s).unwrap_or(0))
+        Ok(guard.map.keys().next().copied().unwrap_or(0))
     }
 }
 
@@ -191,6 +232,26 @@ mod tests {
         assert!(r.is_empty(), "evicted seq must yield empty range");
         let r = store.range(3, 4).await.unwrap();
         assert_eq!(r.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn out_of_order_inserts_track_min_max_correctly() {
+        let store = RingBufferSeqStore::with_capacity(64);
+        store
+            .store(5, &msg(EventCode::StartOfMessages))
+            .await
+            .unwrap();
+        store
+            .store(2, &msg(EventCode::StartOfSystemHours))
+            .await
+            .unwrap();
+        store
+            .store(8, &msg(EventCode::EndOfMessages))
+            .await
+            .unwrap();
+        // BTreeMap-backed: latest is 8, earliest is 2.
+        assert_eq!(store.earliest().await.unwrap(), 2);
+        assert_eq!(store.latest().await.unwrap(), 8);
     }
 
     #[tokio::test]
@@ -263,6 +324,11 @@ mod tests {
         reader.await.unwrap();
     }
 
+    /// 100 k-store stress per the #50 acceptance criteria. Runs in
+    /// the default `cargo test` (and under tarpaulin) — the
+    /// `BTreeMap`-backed implementation is `O(n log n)` for the
+    /// loop, well under the per-test timeout even with coverage
+    /// instrumentation.
     #[tokio::test]
     async fn stress_100k_stores() {
         let store = RingBufferSeqStore::with_capacity(100_000);
@@ -278,5 +344,29 @@ mod tests {
         assert_eq!(r.len(), 100);
         assert_eq!(r[0].0, 50_000);
         assert_eq!(r[99].0, 50_099);
+    }
+
+    #[tokio::test]
+    async fn latest_never_moves_backwards_under_out_of_order_inserts() {
+        // Capacity 1: store(5) then store(2) makes the map only
+        // hold {2}, but the contract requires latest() to remain
+        // the highest seq ever stored — i.e. 5.
+        let store = RingBufferSeqStore::with_capacity(1);
+        store
+            .store(5, &msg(EventCode::StartOfMessages))
+            .await
+            .unwrap();
+        assert_eq!(store.latest().await.unwrap(), 5);
+        store
+            .store(2, &msg(EventCode::EndOfMessages))
+            .await
+            .unwrap();
+        assert_eq!(
+            store.latest().await.unwrap(),
+            5,
+            "latest() must be the high-water mark, not the highest retained key",
+        );
+        // earliest() reflects what's actually retained.
+        assert_eq!(store.earliest().await.unwrap(), 2);
     }
 }
