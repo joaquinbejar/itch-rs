@@ -27,10 +27,9 @@ use itch_protocol::{
     OrderDelete, OrderExecuted, OrderExecutedWithPrice, OrderReference, OrderReplace, Price4,
     Price8, Printable, RegShoAction, RegShoRestriction, RetailPriceImprovement, RpiInterestFlag,
     Shares, Side, Stock, StockDirectory, StockLocate, StockTradingAction, SystemEvent, Timestamp,
-    TradeNonCross, TradingState, TrackingNumber, YesNo,
+    TrackingNumber, TradeNonCross, TradingState, YesNo,
 };
 use itch_tcp::{accept, bind};
-use tokio::net::TcpListener;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -49,7 +48,6 @@ fn canonical_session() -> Vec<Message> {
     };
     let session = h(32_400_000_000_000, 0); // session-level (locate = 0)
     let aapl = h(32_400_005_000_000, 1);
-    let msft = h(32_400_010_000_000, 2);
 
     vec![
         // Session lifecycle
@@ -61,7 +59,9 @@ fn canonical_session() -> Vec<Message> {
             header: h(32_400_001_000_000, 0),
             event_code: EventCode::StartOfSystemHours,
         }),
-        // Reference data
+        // Reference data — emit `R` for every symbol that later
+        // appears in trade / NOII / RPI messages so a client that
+        // seeds state from the directory has a complete picture.
         Message::StockDirectory(StockDirectory {
             header: h(32_400_002_000_000, 1),
             stock: Stock::new("AAPL"),
@@ -77,6 +77,40 @@ fn canonical_session() -> Vec<Message> {
             luld_reference_price_tier: LuldTier::Tier1,
             etp_flag: YesNo::No,
             etp_leverage_factor: 0,
+            inverse_indicator: YesNo::No,
+        }),
+        Message::StockDirectory(StockDirectory {
+            header: h(32_400_002_100_000, 2),
+            stock: Stock::new("MSFT"),
+            market_category: MarketCategory::NasdaqGlobalSelect,
+            financial_status: FinancialStatus::Normal,
+            round_lot_size: Shares::from_u32(100),
+            round_lots_only: YesNo::No,
+            issue_classification: b'C',
+            issue_subtype: *b"  ",
+            authenticity: Authenticity::Live,
+            short_sale_threshold: YesNo::No,
+            ipo_flag: YesNo::No,
+            luld_reference_price_tier: LuldTier::Tier1,
+            etp_flag: YesNo::No,
+            etp_leverage_factor: 0,
+            inverse_indicator: YesNo::No,
+        }),
+        Message::StockDirectory(StockDirectory {
+            header: h(32_400_002_200_000, 3),
+            stock: Stock::new("SPY"),
+            market_category: MarketCategory::NyseArca,
+            financial_status: FinancialStatus::Normal,
+            round_lot_size: Shares::from_u32(100),
+            round_lots_only: YesNo::No,
+            issue_classification: b'O',
+            issue_subtype: *b"  ",
+            authenticity: Authenticity::Live,
+            short_sale_threshold: YesNo::No,
+            ipo_flag: YesNo::No,
+            luld_reference_price_tier: LuldTier::Tier1,
+            etp_flag: YesNo::Yes,
+            etp_leverage_factor: 1_000,
             inverse_indicator: YesNo::No,
         }),
         Message::StockTradingAction(StockTradingAction {
@@ -179,7 +213,9 @@ fn canonical_session() -> Vec<Message> {
             match_number: MatchNumber::from_u64(7777),
         }),
         Message::CrossTrade(CrossTrade {
-            header: msft,
+            // SPY's locate is 3 (set in its StockDirectory above);
+            // the prior MSFT trade used locate 2.
+            header: h(32_400_010_500_000, 3),
             shares: 1_000_000,
             stock: Stock::new("SPY"),
             cross_price: Price4::from_u32(4_000_000),
@@ -225,31 +261,41 @@ fn canonical_session() -> Vec<Message> {
 
 use itch_protocol::{MatchNumber, PriceVariation};
 
-async fn handle_one_client(
-    listener: &TcpListener,
-    session: &[Message],
+async fn replay_to_client(
+    mut conn: itch_tcp::ItchConnection,
+    peer: std::net::SocketAddr,
+    session: std::sync::Arc<Vec<Message>>,
     delay: Duration,
-) -> std::io::Result<()> {
-    let (mut conn, peer) = accept(listener).await?;
+) {
     info!(?peer, msgs = session.len(), "publishing synthetic session");
-    for msg in session {
+    let last = session.len().saturating_sub(1);
+    for (i, msg) in session.iter().enumerate() {
         if let Err(err) = conn.send(*msg).await {
-            warn!(?peer, ?err, "client send failed; dropping connection");
-            return Ok(());
+            warn!(
+                ?peer,
+                ?err,
+                sent = i,
+                "client send failed; dropping connection"
+            );
+            return;
         }
         debug!(?peer, tag = %char::from(msg.tag()), "sent");
-        if !delay.is_zero() {
+        // Only sleep between messages, not after the last one — keeps
+        // the total session length deterministic at
+        // `(N-1) * delay`.
+        if !delay.is_zero() && i != last {
             tokio::time::sleep(delay).await;
         }
     }
     info!(?peer, "session complete; closing connection");
-    Ok(())
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .init();
 
     let bind_addr = env::var("ITCH_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_string());
@@ -262,21 +308,30 @@ async fn main() -> std::io::Result<()> {
     let listener = bind(&bind_addr).await?;
     info!(addr = %bind_addr, ?delay, "itch-server ready");
 
-    let session = canonical_session();
+    let session = std::sync::Arc::new(canonical_session());
     info!(messages = session.len(), "synthetic session prepared");
 
-    // One per-connection task per accept; replay the full session
-    // and close. Ctrl-C cleanly shuts down via tokio::select!.
+    // Per-connection task per accept; multiple clients run in
+    // parallel — a slow consumer no longer blocks new accepts.
+    // Ctrl-C cancels accept and detaches the spawned tasks; the
+    // production soup / mold servers in v0.3 grow a graceful-EOS
+    // shutdown path on top of this skeleton.
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 info!("ctrl-c received; shutting down");
                 return Ok(());
             }
-            res = handle_one_client(&listener, &session, delay) => {
-                if let Err(err) = res {
-                    error!(?err, "accept failed");
-                    return Err(err);
+            res = accept(&listener) => {
+                match res {
+                    Ok((conn, peer)) => {
+                        let session = session.clone();
+                        tokio::spawn(replay_to_client(conn, peer, session, delay));
+                    }
+                    Err(err) => {
+                        error!(?err, "accept failed");
+                        return Err(err);
+                    }
                 }
             }
         }
@@ -287,19 +342,69 @@ async fn main() -> std::io::Result<()> {
 mod tests {
     use super::*;
 
+    /// Map a `Message` to its variant name. Exhaustive match —
+    /// adding a new ITCH variant fails to compile here, which forces
+    /// `canonical_session_covers_every_message_variant` to be
+    /// updated in lock-step.
+    fn variant_of(m: &Message) -> &'static str {
+        match m {
+            Message::SystemEvent(_) => "SystemEvent",
+            Message::StockDirectory(_) => "StockDirectory",
+            Message::StockTradingAction(_) => "StockTradingAction",
+            Message::RegShoRestriction(_) => "RegShoRestriction",
+            Message::MarketParticipantPosition(_) => "MarketParticipantPosition",
+            Message::MwcbDeclineLevel(_) => "MwcbDeclineLevel",
+            Message::MwcbStatus(_) => "MwcbStatus",
+            Message::IpoQuotingPeriodUpdate(_) => "IpoQuotingPeriodUpdate",
+            Message::AddOrder(_) => "AddOrder",
+            Message::AddOrderWithMpid(_) => "AddOrderWithMpid",
+            Message::OrderExecuted(_) => "OrderExecuted",
+            Message::OrderExecutedWithPrice(_) => "OrderExecutedWithPrice",
+            Message::OrderCancel(_) => "OrderCancel",
+            Message::OrderDelete(_) => "OrderDelete",
+            Message::OrderReplace(_) => "OrderReplace",
+            Message::TradeNonCross(_) => "TradeNonCross",
+            Message::CrossTrade(_) => "CrossTrade",
+            Message::BrokenTrade(_) => "BrokenTrade",
+            Message::Noii(_) => "Noii",
+            Message::RetailPriceImprovement(_) => "RetailPriceImprovement",
+        }
+    }
+
     #[test]
-    fn canonical_session_covers_all_twenty_kinds() {
+    fn canonical_session_covers_every_message_variant() {
         let session = canonical_session();
-        let kinds = [
-            b'S', b'R', b'H', b'Y', b'L', b'V', b'W', b'K', b'A', b'F', b'E', b'C', b'X', b'D',
-            b'U', b'P', b'Q', b'B', b'I', b'N',
+        let expected = [
+            "SystemEvent",
+            "StockDirectory",
+            "StockTradingAction",
+            "RegShoRestriction",
+            "MarketParticipantPosition",
+            "MwcbDeclineLevel",
+            "MwcbStatus",
+            "IpoQuotingPeriodUpdate",
+            "AddOrder",
+            "AddOrderWithMpid",
+            "OrderExecuted",
+            "OrderExecutedWithPrice",
+            "OrderCancel",
+            "OrderDelete",
+            "OrderReplace",
+            "TradeNonCross",
+            "CrossTrade",
+            "BrokenTrade",
+            "Noii",
+            "RetailPriceImprovement",
         ];
-        for &k in &kinds {
+        for name in expected {
             assert!(
-                session.iter().any(|m| m.tag() == k),
-                "session missing message kind '{}'",
-                char::from(k)
+                session.iter().any(|m| variant_of(m) == name),
+                "session missing variant {name}"
             );
+        }
+        for m in &session {
+            let v = variant_of(m);
+            assert!(expected.contains(&v), "unexpected variant in session: {v}");
         }
     }
 
