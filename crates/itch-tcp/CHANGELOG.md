@@ -6,6 +6,29 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+### Added
+
+- `Server<S, St, P>` — generic publisher entry point taking a
+  `MessageSource`, a `SeqStore`, and a `SubscriptionPolicy`.
+  `Server::bind(addr, source, store, policy).await?.serve().await?`
+  is the canonical 0.2 shape (per `docs/ITCH-SOURCE.md` §5).
+- One ingest task drains the source, assigns sequence numbers
+  (`store.latest() + 1`), persists each frame **before** any
+  subscriber sees the bytes, then broadcasts to every connected
+  client via `tokio::sync::broadcast` (default capacity 4 096).
+- Per-subscriber writers call `policy.warmup()` first; warmup
+  messages precede any live broadcast.
+- Slow subscribers that lag past the broadcast capacity are
+  dropped with `tracing::warn!(subscriber, skipped)` per
+  `docs/ITCH-SOURCE.md` §8.
+- `Server::with_broadcast_capacity` builder method to override the
+  default fan-out capacity.
+- Hard dep on `itch-source`. Existing `connect` / `bind` / `accept`
+  free functions and `ItchCodec` / `ItchConnection` unchanged.
+- Integration tests in `crates/itch-tcp/tests/server_integration.rs`
+  exercise single-client, two-client, and warmup-then-live
+  ordering against a `ChannelSource`-backed publisher.
+
 ## 0.1.0 — 2026-05-05
 
 ### Added
