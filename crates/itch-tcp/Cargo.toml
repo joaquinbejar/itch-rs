@@ -1,0 +1,23 @@
+[package]
+name        = "itch-tcp"
+description = "Length-prefix TCP framing for itch-protocol — demos and local integration"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+keywords.workspace     = true
+categories.workspace   = true
+
+[dependencies]
+itch-protocol = { workspace = true }
+thiserror     = { workspace = true }
+tokio         = { workspace = true, features = ["net", "rt", "macros", "io-util"] }
+tokio-util    = { workspace = true, features = ["codec"] }
+bytes         = { workspace = true }
+futures       = { workspace = true }
+tracing       = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "rt", "macros", "io-util", "time", "test-util"] }

@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/itch-protocol",
+    "crates/itch-tcp",
+    "crates/itch-server",
+    "crates/itch-client",
+]
+
+[workspace.package]
+version       = "0.1.0"
+edition       = "2021"
+rust-version  = "1.75"
+license       = "MIT OR Apache-2.0"
+repository    = "https://github.com/joaquinbejar/itch-rs"
+authors       = ["Joaquin Bejar <jb@taunais.com>"]
+readme        = "../../README.md"
+keywords      = ["itch", "nasdaq", "market-data", "finance", "trading"]
+categories    = ["network-programming", "encoding", "parser-implementations"]
+
+[workspace.dependencies]
+thiserror     = "1"
+tokio         = { version = "1", default-features = false }
+tokio-util    = { version = "0.7", default-features = false }
+bytes         = "1"
+futures       = "0.3"
+tracing       = "0.1"
+tracing-subscriber = "0.3"
+
+# Internal crates
+itch-protocol = { path = "crates/itch-protocol", version = "0.1.0" }
+itch-tcp      = { path = "crates/itch-tcp",      version = "0.1.0" }
+
+[profile.release]
+lto           = "thin"
+codegen-units = 1
+panic         = "abort"
+strip         = "symbols"
+
+[profile.bench]
+lto           = "thin"
+codegen-units = 1

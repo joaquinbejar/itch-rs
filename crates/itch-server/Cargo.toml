@@ -1,0 +1,23 @@
+[package]
+name        = "itch-server"
+description = "Demo ITCH 5.0 publisher binary (replays a synthetic session)"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+keywords.workspace     = true
+categories.workspace   = true
+
+[[bin]]
+name = "itch-server"
+path = "src/main.rs"
+
+[dependencies]
+itch-protocol      = { workspace = true }
+itch-tcp           = { workspace = true }
+tokio              = { workspace = true, features = ["net", "rt-multi-thread", "macros", "time", "signal"] }
+futures            = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
