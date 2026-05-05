@@ -13,6 +13,7 @@ categories.workspace   = true
 [dependencies]
 thiserror = { workspace = true }
 
-[features]
-default = ["std"]
-std     = []
+# A `std` feature for the eventual `no_std` story (ADR-0005) lands
+# alongside `ProtocolError` in issue #6, where it actually gates
+# `std::error::Error` plumbing. Adding it here as a stub would expose
+# an inert flag in the public surface, so it stays absent until then.

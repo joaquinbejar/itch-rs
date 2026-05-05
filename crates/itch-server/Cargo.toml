@@ -20,4 +20,4 @@ itch-tcp           = { workspace = true }
 tokio              = { workspace = true, features = ["net", "rt-multi-thread", "macros", "time", "signal"] }
 futures            = { workspace = true }
 tracing            = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
