@@ -31,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `store` call.
 - 12 new unit tests (overflow, idempotency, conflict, gap,
   concurrent store + range, 100k stress).
+- `crate::impls::ChannelSource` — `MessageSource` over a
+  `tokio::sync::mpsc::Receiver<Message>`. Construct via
+  `ChannelSource::bounded(capacity)` (returns `(Sender, Self)`) or
+  `ChannelSource::unbounded()` (returns
+  `(UnboundedSender, UnboundedChannelSource)`). Clean
+  end-of-stream is `Ready(None)` when the sender drops — *not*
+  `SourceError::Exhausted`.
+- `crate::impls::IteratorSource<I>` — `MessageSource` over any
+  `Iterator<Item = Message> + Send + Unpin`. Convenience
+  `From<Vec<Message>>`. Pair with `canonical_session()` for
+  fixture-based replays.
 
 ## [0.1.0] — 2026-05-05
 
