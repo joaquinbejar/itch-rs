@@ -59,9 +59,17 @@ fn fmt_message(m: &Message) -> String {
             s.market_maker_mode,
             s.market_participant_state
         ),
-        Message::MwcbDeclineLevel(_) => format!("[{ts:>14} ns] {tag} mwcb_decline_level"),
+        Message::MwcbDeclineLevel(v) => format!(
+            "[{ts:>14} ns] {tag} mwcb_decline_level L1={} L2={} L3={}",
+            fmt_price8(v.level1.as_u64()),
+            fmt_price8(v.level2.as_u64()),
+            fmt_price8(v.level3.as_u64())
+        ),
         Message::MwcbStatus(s) => {
-            format!("[{ts:>14} ns] {tag} mwcb_status        level={:?}", s.breached_level)
+            format!(
+                "[{ts:>14} ns] {tag} mwcb_status        level={:?}",
+                s.breached_level
+            )
         }
         Message::IpoQuotingPeriodUpdate(s) => format!(
             "[{ts:>14} ns] {tag} ipo_quoting_update {:<8} qual={:?} price={}",
@@ -175,10 +183,19 @@ fn fmt_price4(raw: u32) -> String {
     format!("{whole}.{frac:04}")
 }
 
+fn fmt_price8(raw: u64) -> String {
+    // Display as decimal with 8 fractional digits (`Price8` scale).
+    let whole = raw / 100_000_000;
+    let frac = raw % 100_000_000;
+    format!("{whole}.{frac:08}")
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_writer(std::io::stderr)
         .init();
 
@@ -202,10 +219,20 @@ async fn main() -> ExitCode {
             next = conn.next() => {
                 match next {
                     Some(Ok(msg)) => {
-                        // Human-readable line goes to stdout; tracing
-                        // logs go to stderr (configured above) so the
-                        // two streams don't tangle.
-                        println!("{}", fmt_message(&msg));
+                        // Human-readable line on stdout; tracing on
+                        // stderr (configured above). Stop on a
+                        // broken pipe (downstream `head` etc.).
+                        use std::io::Write;
+                        let line = fmt_message(&msg);
+                        let mut out = std::io::stdout().lock();
+                        if let Err(err) = writeln!(out, "{line}") {
+                            if err.kind() == std::io::ErrorKind::BrokenPipe {
+                                info!("stdout closed by peer; exiting");
+                                return ExitCode::SUCCESS;
+                            }
+                            error!(?err, "stdout write failed");
+                            return ExitCode::from(4);
+                        }
                         if matches!(msg, Message::SystemEvent(s) if s.event_code == EventCode::EndOfMessages) {
                             info!("server signaled end of messages");
                             return ExitCode::SUCCESS;
@@ -224,8 +251,14 @@ async fn main() -> ExitCode {
                         return ExitCode::from(3);
                     }
                     None => {
-                        info!("server closed the connection");
-                        return ExitCode::SUCCESS;
+                        // Reaching `None` means the server closed
+                        // before sending `EndOfMessages` (the
+                        // EndOfMessages branch above already
+                        // early-returns SUCCESS). Treat as a
+                        // premature disconnect so callers can
+                        // detect truncated runs via exit code 5.
+                        warn!("server closed before EndOfMessages — premature disconnect");
+                        return ExitCode::from(5);
                     }
                 }
             }
