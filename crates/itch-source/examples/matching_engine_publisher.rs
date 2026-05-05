@@ -54,7 +54,7 @@ fn synth(seq: u64, rng: &mut Rng) -> Message {
         0 => Message::AddOrder(AddOrder {
             header: header(seq),
             order_ref: OrderReference::from_u64(1000 + seq),
-            side: if rng.next_u32() % 2 == 0 {
+            side: if rng.next_u32() & 1 == 0 {
                 Side::Buy
             } else {
                 Side::Sell
@@ -95,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 4) Spawn the simulated matching engine.
     const N: u64 = 10;
     tokio::spawn(async move {
-        let mut rng = Rng(0xC0FF_EE_42);
+        let mut rng = Rng(0xC0FFEE42);
         for seq in 1..=N {
             let m = synth(seq, &mut rng);
             if tx.send(m).await.is_err() {

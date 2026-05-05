@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `examples/matching_engine_publisher.rs` — runnable end-to-end
+  example wiring all three traits together: a tokio task simulates
+  a matching engine emitting `AddOrder` / `OrderExecuted` /
+  `OrderDelete` under a deterministic seed, pushed through a
+  `ChannelSource`, persisted into a `RingBufferSeqStore`, with
+  `StaticPolicy::empty()` for warmup. Self-contained — no
+  `OrderBook-rs` dependency. Run with
+  `cargo run -p itch-source --example matching_engine_publisher`.
+- Crate-level rustdoc cross-links to the example.
+
 - `SeqStore` trait now ships its full async API: `store(&self, seq,
   &Message)`, `range(&self, from, count)`, `latest()`, `earliest()`.
   All four take `&self` so concurrency is the implementor's problem
