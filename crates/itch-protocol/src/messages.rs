@@ -1,15 +1,15 @@
 //! ITCH 5.0 message DTOs and the top-level [`Message`] enum.
 //!
-//! This file lays the structural ground laid out in issue #4: the
-//! 10-byte [`Header`] common to every message body, twenty
-//! placeholder structs (one per ITCH 5.0 message kind), and a
-//! [`Message`] enum that fans out to those structs. The 20 structs
-//! carry only the [`Header`] today — issue #5 fills in the
-//! per-message fields, and issue #6 wires up the `Encode` / `Decode`
-//! traits.
+//! This module contains the 10-byte [`Header`] common to every
+//! message body, twenty placeholder structs (one per ITCH 5.0
+//! message kind), and the [`Message`] enum that fans out to those
+//! structs. Today the placeholder structs carry only the
+//! [`Header`]; the per-message payload fields land in the
+//! follow-up DTO PR, and the `Encode` / `Decode` impls land in the
+//! codec PR.
 //!
-//! See `docs/DOMAIN-MODEL.md` §4 / §5 and
-//! `docs/PROTOCOL-SPEC.md` §2 / §3 for the canonical references.
+//! Total wire size for each kind = 1 (tag byte) + the per-struct
+//! `BODY_LEN` constant.
 
 use crate::primitives::{StockLocate, Timestamp, TrackingNumber};
 
@@ -19,7 +19,7 @@ use crate::primitives::{StockLocate, Timestamp, TrackingNumber};
 
 /// 10-byte header at the start of every ITCH 5.0 message body.
 ///
-/// Wire layout (`docs/PROTOCOL-SPEC.md` §2):
+/// Wire layout:
 ///
 /// | Body offset | Length | Field             | Type             |
 /// |------------:|-------:|-------------------|------------------|
@@ -27,9 +27,11 @@ use crate::primitives::{StockLocate, Timestamp, TrackingNumber};
 /// | 2           | 2      | `tracking_number` | [`TrackingNumber`] |
 /// | 4           | 6      | `timestamp`       | [`Timestamp`]    |
 ///
-/// For non-stock messages (`SystemEvent`, `MwcbDeclineLevel`,
-/// `MwcbStatus`, `IpoQuotingPeriodUpdate`), `stock_locate` is
-/// always `0`.
+/// Per spec, `stock_locate` is always `0` on the wire for
+/// session-level (non-stock) messages — `SystemEvent`,
+/// `MwcbDeclineLevel`, `MwcbStatus`, `IpoQuotingPeriodUpdate`. This
+/// is a session-level invariant **not** enforced by the codec:
+/// consumers that care can validate the field after decode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Header {
     /// Daily-assigned per-symbol array index.
@@ -562,11 +564,21 @@ mod tests {
     }
 
     #[test]
-    fn one_of_each_covers_twenty_kinds() {
-        // Exhaustiveness sanity: when a future ITCH revision adds a
-        // 21st kind, this test fails until `one_of_each` is updated.
-        // The compile-time guard is the exhaustive match in
-        // `Message::tag` itself.
-        assert_eq!(one_of_each().len(), 20);
+    fn one_of_each_has_distinct_tags_and_covers_twenty_kinds() {
+        let kinds = one_of_each();
+        assert_eq!(kinds.len(), 20, "must cover 20 ITCH 5.0 message kinds");
+        // Distinct tags: every kind has a unique on-wire byte.
+        let mut tags: Vec<u8> = kinds.iter().map(|(m, _, _)| m.tag()).collect();
+        tags.sort_unstable();
+        let dedup_count = {
+            let mut t = tags.clone();
+            t.dedup();
+            t.len()
+        };
+        assert_eq!(dedup_count, 20, "every kind must have a distinct tag");
+        // Real compile-time exhaustiveness guard lives in the
+        // exhaustive match arms of `Message::tag` / `header` /
+        // `body_len`; a future ITCH revision that adds a 21st kind
+        // will fail to compile there before this assert is reached.
     }
 }
