@@ -55,7 +55,10 @@ pub mod synthetic;
 /// Contract-test helpers third-party backends can use to self-verify.
 pub mod testing;
 
-pub use impls::{NullSeqStore, RingBufferSeqStore, RingBufferSeqStoreError};
+pub use impls::{
+    ChannelSource, IteratorSource, NullSeqStore, RingBufferSeqStore, RingBufferSeqStoreError,
+    UnboundedChannelSource,
+};
 pub use policy::{StaticPolicy, SubscriptionPolicy};
 pub use seqstore::SeqStore;
 pub use source::{MessageSource, SourceError};
