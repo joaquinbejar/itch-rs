@@ -45,19 +45,38 @@ pub enum RingBufferSeqStoreError {
 /// Bounded in-memory `SeqStore`.
 ///
 /// Holds at most `capacity` frames; on overflow the lowest-keyed
-/// entry is dropped and `earliest()` advances. Stores are
-/// idempotent on `(seq, msg)`; storing a different `msg` at an
-/// already-occupied `seq` returns
+/// entry is dropped. Stores are idempotent on `(seq, msg)`;
+/// storing a different `msg` at an already-occupied `seq` returns
 /// [`RingBufferSeqStoreError::SequenceConflict`].
 ///
-/// Backed by `BTreeMap` so `store` / `range` / `latest` /
-/// `earliest` are all `O(log n)` — out-of-order inserts behave
-/// correctly and 100 k+ stress is tractable under coverage
-/// instrumentation.
+/// Backed by `BTreeMap`. Per-operation costs:
+///
+/// - `store` — `O(log n)` insert.
+/// - `range(from, count)` — `O(log n + k)` where `k` is the
+///   returned length (every returned entry is walked once).
+/// - `latest` / `earliest` — `O(log n)` key lookup.
+///
+/// **Out-of-order inserts.** The contract requires
+/// `latest() = "highest sequence ever stored"`. The store keeps a
+/// monotonic high-water mark internally so that `latest()` never
+/// moves backwards even if a smaller sequence is stored later
+/// (e.g. `store(5)` then `store(2)` with capacity 1).
+/// `earliest()` returns the lowest currently retained key — note
+/// that on out-of-order inserts that hit the capacity cap, the
+/// store evicts the current minimum and inserts the new key, so
+/// `earliest()` may move *down* (not just up) compared to a
+/// previous read.
 #[derive(Debug)]
 pub struct RingBufferSeqStore {
     capacity: usize,
-    inner: RwLock<BTreeMap<u64, Message>>,
+    inner: RwLock<Inner>,
+}
+
+/// Combined map + monotonic high-water mark held under one lock.
+#[derive(Debug, Default)]
+struct Inner {
+    map: BTreeMap<u64, Message>,
+    max_seen: u64,
 }
 
 impl RingBufferSeqStore {
@@ -78,7 +97,7 @@ impl RingBufferSeqStore {
         let capacity = capacity.max(1);
         Self {
             capacity,
-            inner: RwLock::new(BTreeMap::new()),
+            inner: RwLock::new(Inner::default()),
         }
     }
 
@@ -103,22 +122,31 @@ impl SeqStore for RingBufferSeqStore {
         let mut guard = self.inner.write().await;
 
         // Idempotent on (seq, msg); reject re-bind to different msg.
-        if let Some(existing) = guard.get(&seq) {
+        if let Some(existing) = guard.map.get(&seq) {
             if existing == msg {
+                // Still update the high-water mark in case the
+                // re-store is the highest seen so far.
+                if seq > guard.max_seen {
+                    guard.max_seen = seq;
+                }
                 return Ok(());
             }
             return Err(RingBufferSeqStoreError::SequenceConflict { seq });
         }
 
-        if guard.len() == self.capacity {
-            // Evict the lowest-keyed entry (BTreeMap has no
-            // pop_first stable until Rust 1.66 — itch-rs MSRV is
-            // 1.75 so this is fine).
-            if let Some((&first, _)) = guard.iter().next() {
-                guard.remove(&first);
+        if guard.map.len() == self.capacity {
+            // Evict the lowest-keyed entry. With out-of-order
+            // inserts, this may make the new minimum lower than the
+            // previously-evicted one — that is documented on
+            // `RingBufferSeqStore`.
+            if let Some((&first, _)) = guard.map.iter().next() {
+                guard.map.remove(&first);
             }
         }
-        guard.insert(seq, *msg);
+        guard.map.insert(seq, *msg);
+        if seq > guard.max_seen {
+            guard.max_seen = seq;
+        }
         Ok(())
     }
 
@@ -127,13 +155,13 @@ impl SeqStore for RingBufferSeqStore {
             return Ok(Vec::new());
         }
         let guard = self.inner.read().await;
-        if guard.is_empty() {
+        if guard.map.is_empty() {
             return Ok(Vec::new());
         }
 
-        let mut out = Vec::with_capacity(count.min(guard.len()));
+        let mut out = Vec::with_capacity(count.min(guard.map.len()));
         let mut expected = from;
-        for (&s, &m) in guard.range(from..) {
+        for (&s, &m) in guard.map.range(from..) {
             if s != expected {
                 // Gap — stop. Contract: `range` MUST NOT skip
                 // missing sequences.
@@ -149,13 +177,17 @@ impl SeqStore for RingBufferSeqStore {
     }
 
     async fn latest(&self) -> Result<u64, Self::Error> {
+        // High-water mark — never moves backwards, per the contract
+        // ("highest sequence ever stored").
         let guard = self.inner.read().await;
-        Ok(guard.keys().next_back().copied().unwrap_or(0))
+        Ok(guard.max_seen)
     }
 
     async fn earliest(&self) -> Result<u64, Self::Error> {
+        // Lowest *currently retained* key. May decrease over time
+        // if out-of-order inserts hit the capacity cap.
         let guard = self.inner.read().await;
-        Ok(guard.keys().next().copied().unwrap_or(0))
+        Ok(guard.map.keys().next().copied().unwrap_or(0))
     }
 }
 
@@ -292,13 +324,12 @@ mod tests {
         reader.await.unwrap();
     }
 
-    /// 100 k-store stress per the #50 acceptance criteria. Marked
-    /// `#[ignore]` so the default `cargo test` (and the
-    /// tarpaulin/Codecov coverage job, which instruments every
-    /// allocation) skip it. Run locally via
-    /// `cargo test -p itch-source -- --ignored`.
+    /// 100 k-store stress per the #50 acceptance criteria. Runs in
+    /// the default `cargo test` (and under tarpaulin) — the
+    /// `BTreeMap`-backed implementation is `O(n log n)` for the
+    /// loop, well under the per-test timeout even with coverage
+    /// instrumentation.
     #[tokio::test]
-    #[ignore = "stress: 100k stores; runs under --ignored"]
     async fn stress_100k_stores() {
         let store = RingBufferSeqStore::with_capacity(100_000);
         for seq in 1..=100_000u64 {
@@ -315,19 +346,27 @@ mod tests {
         assert_eq!(r[99].0, 50_099);
     }
 
-    /// Smaller stress (10 k) that runs by default — verifies the
-    /// `BTreeMap`-backed implementation is `O(log n)` enough for CI
-    /// to finish well under the per-test timeout.
     #[tokio::test]
-    async fn stress_10k_stores_in_default_run() {
-        let store = RingBufferSeqStore::with_capacity(10_000);
-        for seq in 1..=10_000u64 {
-            store
-                .store(seq, &msg(EventCode::StartOfMessages))
-                .await
-                .unwrap();
-        }
-        assert_eq!(store.earliest().await.unwrap(), 1);
-        assert_eq!(store.latest().await.unwrap(), 10_000);
+    async fn latest_never_moves_backwards_under_out_of_order_inserts() {
+        // Capacity 1: store(5) then store(2) makes the map only
+        // hold {2}, but the contract requires latest() to remain
+        // the highest seq ever stored — i.e. 5.
+        let store = RingBufferSeqStore::with_capacity(1);
+        store
+            .store(5, &msg(EventCode::StartOfMessages))
+            .await
+            .unwrap();
+        assert_eq!(store.latest().await.unwrap(), 5);
+        store
+            .store(2, &msg(EventCode::EndOfMessages))
+            .await
+            .unwrap();
+        assert_eq!(
+            store.latest().await.unwrap(),
+            5,
+            "latest() must be the high-water mark, not the highest retained key",
+        );
+        // earliest() reflects what's actually retained.
+        assert_eq!(store.earliest().await.unwrap(), 2);
     }
 }
