@@ -39,7 +39,7 @@ impl StockLocate {
 
 /// Opaque NASDAQ-internal id (2 bytes, big-endian on the wire).
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct TrackingNumber(u16);
 
 impl TrackingNumber {
@@ -117,7 +117,7 @@ impl MatchNumber {
 
 /// Quantity in shares (4 bytes, big-endian).
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Shares(u32);
 
 impl Shares {
@@ -142,11 +142,11 @@ impl Shares {
 /// Nanoseconds since midnight Eastern Time (u48, 6 bytes on the
 /// wire; stored in u64 with the high two bytes always zero).
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Timestamp(u64);
 
 /// Reasons a `Timestamp::try_new` can reject the input.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TimestampError {
     /// Value exceeds the u48 range `[0, 2^48 - 1]`.
     OutOfRange {
@@ -218,7 +218,7 @@ impl Timestamp {
 /// padding byte), NOT all-zero, so a default-constructed `Stock`
 /// represents "blank symbol" on the wire.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Stock([u8; Self::WIRE_LEN]);
 
 impl Default for Stock {
@@ -280,7 +280,7 @@ impl Stock {
 ///
 /// `Default` returns an all-space buffer.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Mpid([u8; Self::WIRE_LEN]);
 
 impl Default for Mpid {
@@ -341,7 +341,7 @@ impl Mpid {
 /// Fixed-point price with 4 decimal places (4 bytes u32 on the
 /// wire; decimal value = `wire / 10_000`).
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Price4(u32);
 
 impl Price4 {
@@ -390,7 +390,7 @@ impl Price4 {
 /// wire; decimal value = `wire / 10^8`). Used for MWCB level
 /// prices.
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Price8(u64);
 
 impl Price8 {
