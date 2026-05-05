@@ -113,8 +113,6 @@ mod tests {
         })
     }
 
-    fn _assert_message_source(_: &dyn MessageSource) {}
-
     #[tokio::test]
     async fn bounded_drains_then_returns_none_when_sender_drops() {
         let (tx, mut src) = ChannelSource::bounded(8);
