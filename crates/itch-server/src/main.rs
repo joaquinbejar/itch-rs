@@ -29,26 +29,54 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use clap::Parser;
-use itch_source::{canonical_session, IteratorSource, MessageSource, NullSeqStore, StaticPolicy};
 use std::env;
 use std::net::SocketAddr;
+
+use clap::{Parser, ValueEnum};
+use itch_source::{
+    canonical_session, IteratorSource, MessageSource, RingBufferSeqStore, StaticPolicy,
+};
 use tracing::{error, info};
 use tracing_subscriber::{fmt, EnvFilter};
 
 const DEFAULT_BIND: &str = "127.0.0.1:9100";
+const DEFAULT_CACHE_SIZE: usize = 65_536;
+
+/// Source kind selected on the CLI.
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum SourceKind {
+    /// Wrap the canonical synthetic session via `IteratorSource`.
+    Iterator,
+    /// `.itch` Glimpse-format file replay (lands with `itch-replay`
+    /// in v0.5).
+    ReplayGlimpse,
+    /// Raw `.itch` capture file replay (lands with `itch-replay`
+    /// in v0.5).
+    ReplayRaw,
+}
 
 /// ITCH 5.0 publisher CLI arguments.
 #[derive(Parser)]
-#[command(about = "ITCH 5.0 publisher")]
+#[command(about = "ITCH 5.0 publisher (thin glue over itch-source + itch-tcp)")]
 struct Args {
-    /// Bind address (default: 127.0.0.1:9100, override via ITCH_BIND env var)
+    /// Bind address. Defaults to `127.0.0.1:9100` (also honored
+    /// via the `ITCH_BIND` env var for backward compat).
     #[arg(long)]
     bind: Option<String>,
 
-    /// Message source: 'iterator' (canonical session, default)
-    #[arg(long, default_value = "iterator")]
-    source: String,
+    /// Message source kind. Default `iterator` (canonical session).
+    #[arg(long, value_enum, default_value_t = SourceKind::Iterator)]
+    source: SourceKind,
+
+    /// Path to the source file (required for `replay-glimpse` /
+    /// `replay-raw`).
+    #[arg(long)]
+    source_path: Option<String>,
+
+    /// `RingBufferSeqStore` capacity (frames retained for
+    /// retransmission). Default 65 536.
+    #[arg(long, default_value_t = DEFAULT_CACHE_SIZE)]
+    cache_size: usize,
 }
 
 #[tokio::main]
@@ -62,6 +90,7 @@ async fn main() -> std::io::Result<()> {
     let args = Args::parse();
     let bind_addr = args
         .bind
+        .clone()
         .or_else(|| env::var("ITCH_BIND").ok())
         .unwrap_or_else(|| DEFAULT_BIND.to_string());
 
@@ -72,27 +101,36 @@ async fn main() -> std::io::Result<()> {
         )
     })?;
 
-    // Construct source (iterator source wrapping canonical session)
-    let source: Box<dyn MessageSource> = match args.source.as_str() {
-        "iterator" => Box::new(IteratorSource::from(canonical_session())),
-        other => {
-            error!(source = %other, "unknown source type");
+    // Construct source based on CLI flag.
+    let source: Box<dyn MessageSource> = match args.source {
+        SourceKind::Iterator => Box::new(IteratorSource::from(canonical_session())),
+        SourceKind::ReplayGlimpse | SourceKind::ReplayRaw => {
+            error!(
+                source = ?args.source,
+                "replay-glimpse / replay-raw require itch-replay (v0.5)"
+            );
             return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("unknown source: {other}"),
+                std::io::ErrorKind::Unsupported,
+                "replay sources are not available in v0.2 — see itch-replay (v0.5)",
             ));
         }
     };
 
-    // Construct store (NullSeqStore for v0.2)
-    let store = NullSeqStore::new();
+    // SeqStore — bounded ring keyed by sequence so a re-attaching
+    // subscriber could in principle ask for a retransmit window.
+    let store = RingBufferSeqStore::with_capacity(args.cache_size);
 
-    // Construct policy (empty warmup for now)
+    // Demo policy — no warmup.
     let policy = StaticPolicy::empty();
 
-    info!(addr = %bind_addr, source = %args.source, "binding server");
+    info!(
+        addr = %bind_addr,
+        source = ?args.source,
+        cache_size = args.cache_size,
+        "binding server"
+    );
 
-    // Thin glue: Server::bind().serve() does the heavy lifting
+    // Thin glue: Server::bind().serve() drives ingest + accept.
     itch_tcp::Server::bind(addr, source, store, policy)
         .await?
         .serve()
