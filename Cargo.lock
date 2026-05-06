@@ -276,6 +276,7 @@ dependencies = [
  "itch-source",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tokio-test",
  "tracing",
  "tracing-subscriber",
