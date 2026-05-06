@@ -9,6 +9,7 @@ members = [
     "crates/itch-replay",
     "crates/itch-server",
     "crates/itch-client",
+    "crates/itch-conformance",
 ]
 
 [workspace.package]
@@ -30,11 +31,12 @@ futures       = "0.3"
 tracing       = "0.1"
 
 # Internal crates
-itch-protocol = { path = "crates/itch-protocol", version = "0.1.0" }
-itch-tcp      = { path = "crates/itch-tcp",      version = "0.1.0" }
-itch-soup     = { path = "crates/itch-soup",     version = "0.1.0" }
-itch-mold     = { path = "crates/itch-mold",     version = "0.1.0" }
-itch-source   = { path = "crates/itch-source",   version = "0.1.0" }
+itch-protocol    = { path = "crates/itch-protocol",    version = "0.1.0" }
+itch-tcp         = { path = "crates/itch-tcp",         version = "0.1.0" }
+itch-soup        = { path = "crates/itch-soup",        version = "0.1.0" }
+itch-mold        = { path = "crates/itch-mold",        version = "0.1.0" }
+itch-source      = { path = "crates/itch-source",      version = "0.1.0" }
+itch-conformance = { path = "crates/itch-conformance", version = "0.1.0" }
 
 [profile.release]
 lto           = "thin"
