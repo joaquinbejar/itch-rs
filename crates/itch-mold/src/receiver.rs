@@ -498,6 +498,37 @@ impl MoldStream {
         self.touch_packet();
     }
 
+    /// Feed retransmitted frames into the receiver as if they had
+    /// arrived on the multicast feed. Used by the gap-recovery
+    /// client (#24) when a re-request server replies. Each frame
+    /// is wrapped into a single-block packet at its captured
+    /// sequence; the same gap / pending logic that handles
+    /// out-of-order multicast packets handles retransmissions.
+    pub fn ingest_retransmit(&mut self, frames: &[crate::request_server::CachedFrame]) {
+        let session = self
+            .state
+            .session
+            .unwrap_or_else(|| crate::codec::session_from_str("").expect("empty session"));
+        for f in frames {
+            let block = match crate::codec::MessageBlock::new(f.body.clone()) {
+                Ok(b) => b,
+                Err(err) => {
+                    self.state.outbox.push_back(Err(err));
+                    continue;
+                }
+            };
+            let pkt = match MoldPacket::new_data(session, f.sequence, vec![block]) {
+                Ok(p) => p,
+                Err(err) => {
+                    self.state.outbox.push_back(Err(err));
+                    continue;
+                }
+            };
+            self.state.ingest(pkt);
+        }
+        self.touch_packet();
+    }
+
     /// Returns the current next-expected sequence number.
     #[must_use]
     pub fn next_expected_sequence(&self) -> u64 {

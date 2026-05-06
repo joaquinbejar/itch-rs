@@ -49,6 +49,7 @@
 mod codec;
 mod error;
 mod event;
+mod gap_recovery;
 mod receiver;
 mod request_server;
 
@@ -58,6 +59,11 @@ pub use codec::{
 };
 pub use error::MoldError;
 pub use event::MoldEvent;
+pub use gap_recovery::{
+    GapRecoveryClient, GapRecoveryConfig, GapRecoveryOutcome, DEFAULT_BACKOFF_MAX,
+    DEFAULT_BACKOFF_MIN, DEFAULT_GAP_TIMEOUT, DEFAULT_MAX_RETRIES_PER_SERVER,
+    DEFAULT_REQUEST_TIMEOUT,
+};
 pub use receiver::{
     MoldConfig, MoldStream, PendingOverflowPolicy, DEFAULT_MAX_PENDING, DEFAULT_SILENCE_DEAD_LINK,
     DEFAULT_SILENCE_WARNING, RECV_BUFFER_LEN,
