@@ -52,7 +52,10 @@ use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
 
 mod connection;
-pub use connection::{login, SoupConnection, SoupCredentials, DEFAULT_LOGIN_TIMEOUT};
+pub use connection::{
+    login, login_with_timeout, SoupConnection, SoupCredentials, DEFAULT_LOGIN_TIMEOUT,
+    DEFAULT_SEND_TIMEOUT,
+};
 
 mod heartbeat;
 pub use heartbeat::{HeartbeatConfig, InboundHeartbeat, OutboundHeartbeat};

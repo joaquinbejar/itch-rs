@@ -314,18 +314,16 @@ where
                 Poll::Ready(Some(Ok(p))) => p,
             };
             match packet {
-                SoupPacket::SequencedData(payload) => {
-                    match this.deliver_sequenced(&payload) {
-                        Ok(msg) => {
-                            tracing::debug!(seq = this.expected_sequence, "decoded sequenced-data");
-                            return Poll::Ready(Some(Ok(msg)));
-                        }
-                        Err(err) => {
-                            tracing::warn!(?err, "bad inner ITCH frame in sequenced data");
-                            return Poll::Ready(Some(Err(err)));
-                        }
+                SoupPacket::SequencedData(payload) => match this.deliver_sequenced(&payload) {
+                    Ok(msg) => {
+                        tracing::debug!(seq = this.expected_sequence, "decoded sequenced-data");
+                        return Poll::Ready(Some(Ok(msg)));
                     }
-                }
+                    Err(err) => {
+                        tracing::warn!(?err, "bad inner ITCH frame in sequenced data");
+                        return Poll::Ready(Some(Err(err)));
+                    }
+                },
                 SoupPacket::EndOfSession => {
                     this.session_ended = true;
                     tracing::info!(session = %this.session, "soup session ended (Z)");
@@ -1026,7 +1024,9 @@ mod tests {
                 .expect("send bad");
             // 2) Good payload immediately after.
             server
-                .send(SoupPacket::SequencedData(message_payload(&sample_message())))
+                .send(SoupPacket::SequencedData(
+                    message_payload(&sample_message()),
+                ))
                 .await
                 .expect("send good");
             server.send(SoupPacket::EndOfSession).await.expect("send Z");
@@ -1080,24 +1080,22 @@ mod tests {
                 .await
                 .expect("send accepted");
             // Pepper the stream with H/+/H around two real S packets.
+            server.send(SoupPacket::ServerHeartbeat).await.expect("h1");
             server
-                .send(SoupPacket::ServerHeartbeat)
-                .await
-                .expect("h1");
-            server
-                .send(SoupPacket::SequencedData(message_payload(&sample_message())))
+                .send(SoupPacket::SequencedData(
+                    message_payload(&sample_message()),
+                ))
                 .await
                 .expect("s1");
             server
                 .send(SoupPacket::Debug(b"info".to_vec()))
                 .await
                 .expect("d");
+            server.send(SoupPacket::ServerHeartbeat).await.expect("h2");
             server
-                .send(SoupPacket::ServerHeartbeat)
-                .await
-                .expect("h2");
-            server
-                .send(SoupPacket::SequencedData(message_payload(&sample_message())))
+                .send(SoupPacket::SequencedData(
+                    message_payload(&sample_message()),
+                ))
                 .await
                 .expect("s2");
             server.send(SoupPacket::EndOfSession).await.expect("z");
