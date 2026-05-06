@@ -52,10 +52,18 @@ use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
 
 mod connection;
-pub use connection::{login, SoupConnection, SoupCredentials, DEFAULT_LOGIN_TIMEOUT};
+pub use connection::{
+    login, login_with_timeout, SoupConnection, SoupCredentials, DEFAULT_LOGIN_TIMEOUT,
+};
 
 mod heartbeat;
 pub use heartbeat::{HeartbeatConfig, InboundHeartbeat, OutboundHeartbeat};
+
+mod server;
+pub use server::{
+    AllowAllAuthenticator, Authenticator, SoupServer, SoupSession, StaticAuthenticator,
+    DEFAULT_BROADCAST_CAPACITY, DEFAULT_SHUTDOWN_GRACE, DEFAULT_UNSEQUENCED_INBOX_CAPACITY,
+};
 
 /// Maximum total wire bytes the codec will accept for a single
 /// SoupBinTCP packet (length prefix + type tag + payload). Mirrors

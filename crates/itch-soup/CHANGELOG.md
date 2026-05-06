@@ -8,6 +8,39 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`SoupServer`** (issue #18). Server-side SoupBinTCP publisher
+  generic over the three `itch-source` traits (`MessageSource`,
+  `SeqStore`, `SubscriptionPolicy`) per ADR-0012, mirroring the
+  shape of `itch_tcp::Server`. Per-connection task per
+  `docs/TRANSPORT-SPEC.md` §3.4:
+  - `bind(addr, source, store, policy)` — accept-anyone authentication.
+  - `bind_with_auth(addr, source, store, policy, authenticator)` —
+    typed `Authenticator` trait. Ships `AllowAllAuthenticator` and
+    `StaticAuthenticator(username, password)`.
+  - Builder methods: `with_session(SoupSession)`, `with_start_sequence(u64)`,
+    `with_broadcast_capacity(usize)`, `with_shutdown_grace(Duration)`.
+  - Single ingest task pulls the source, persists to the
+    `SeqStore`, fan-outs via `tokio::sync::broadcast` (capacity
+    4096 default; lagging subscribers are dropped per spec).
+  - Per-connection task: read `LoginRequest`, validate via the
+    authenticator, reject with `J LoginRejected(NotAuthorized)` on
+    bad credentials or `LoginRejected(SessionUnavailable)` on
+    explicit non-empty session-id mismatch. On accept, replay
+    `policy.warmup()` then the persisted gap range from the
+    `SeqStore` (`requested_sequence` honoured), then attach to
+    the live broadcast.
+  - `unsequenced_inbox() -> Option<mpsc::Receiver<(SocketAddr, Message)>>`
+    delivers `U UnsequencedData` packets from connected clients
+    decoded as `itch_protocol::Message`.
+  - Graceful shutdown via `serve_with_shutdown(watch::Receiver<bool>)`;
+    every connected subscriber receives `Z EndOfSession` before
+    the listener is dropped. Default 5 s grace.
+  - 9 in-process tests via `tokio::net::TcpListener` mock clients:
+    happy-path (3 messages in order), bad credentials,
+    session-mismatch rejection, warmup-then-live ordering, two-
+    client fan-out, unsequenced inbox round-trip, default and
+    static authenticator, session-id truncation.
+- New hard dependency: `itch-source` (per ADR-0012).
 - **Login state machine** (`SoupConnection`, `login`,
   `login_with_timeout`, `SoupCredentials`,
   `DEFAULT_LOGIN_TIMEOUT`). Performs the
