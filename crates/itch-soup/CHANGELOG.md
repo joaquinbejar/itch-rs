@@ -8,6 +8,20 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`SoupServer`** (issue #18). Server-side SoupBinTCP publisher
+  generic over the three `itch-source` traits (`MessageSource`,
+  `SeqStore`, `SubscriptionPolicy`) per ADR-0012.
+- New hard dependency: `itch-source` (per ADR-0012).
+- **End-to-end integration tests** (`tests/integration.rs`,
+  issue #19). Drives a real `SoupServer` from a real
+  `SoupConnection` / `ResilientSoupClient` through every
+  documented exchange: happy-path (1000 sequenced messages),
+  login rejection (NotAuthorized + SessionUnavailable),
+  server-killed mid-session, reconnect-with-resume,
+  ResilientSoupClient recovers across socket drops, 2 concurrent
+  clients fan-out, logout cleanly, graceful EOS, heartbeat
+  packets filtered. Gated behind the `integration` Cargo feature.
+- New dev-deps: `tracing-subscriber` (test-only).
 - **Login state machine** (`SoupConnection`, `login`,
   `login_with_timeout`, `SoupCredentials`,
   `DEFAULT_LOGIN_TIMEOUT`). Performs the
