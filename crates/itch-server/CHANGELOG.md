@@ -6,6 +6,19 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+### Added
+
+- `--transport tcp|soup|mold` flag (default `tcp`) — runtime
+  dispatch across sibling transport crates per ADR-0008. The same
+  `(addr, source, store, policy)` glue routes into
+  `itch_tcp::Server::bind` or `itch_soup::SoupServer::bind`. The
+  `mold` branch returns `io::ErrorKind::Unsupported` until
+  `MoldPublisher` lands (issues #25 / #26).
+- `itch-soup` and `itch-mold` are now hard dependencies — runtime
+  dispatch (no `#[cfg(feature)]`) per ADR-0005 / ADR-0008.
+- Unit tests for transport-flag parsing and the mold-not-available
+  error path.
+
 ### Changed
 
 - Rewrite main glue layer to use `itch_tcp::Server::bind(addr, source, store, policy).serve()`.

@@ -379,8 +379,8 @@ impl ReceiverState {
 }
 
 /// Driver-agnostic packet ingestion. The async UDP receiver and the
-/// in-process tests share the state machine via [`ReceiverState`];
-/// this struct adds the silence timer and the `Stream` impl.
+/// in-process tests share an internal state machine; this struct
+/// adds the silence timer and the `Stream` impl.
 pub struct MoldStream {
     state: ReceiverState,
     socket: Option<UdpSocket>,
