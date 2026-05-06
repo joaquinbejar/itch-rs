@@ -24,6 +24,12 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 - Exhaustive `any_message()` strategy — one `prop_oneof!` branch
   per ITCH 5.0 message kind so a future variant fails to compile
   here too, mirroring the `Message::decode` exhaustiveness rule.
+- **Criterion benchmarks** (`benches/decode.rs`, `benches/encode.rs`,
+  `benches/throughput.rs`) with 20 per-message-kind decode latency
+  measurements, 5 encode measurements, and 1 MiB throughput. Targets:
+  < 100 ns per message decode/encode, > 50 M messages/s on single
+  core. Baseline saved at v0.3.0 release tag for future regression
+  detection.
 
 ## 0.1.0 — 2026-05-05
 
