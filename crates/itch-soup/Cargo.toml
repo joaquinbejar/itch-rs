@@ -13,11 +13,13 @@ categories.workspace   = true
 [dependencies]
 itch-protocol = { workspace = true }
 thiserror     = { workspace = true }
-tokio         = { workspace = true, features = ["net", "rt", "macros", "time"] }
+tokio         = { workspace = true, features = ["net", "rt", "macros", "time", "sync"] }
 tokio-util    = { workspace = true, features = ["codec"] }
 bytes         = { workspace = true }
 futures       = { workspace = true }
 tracing       = { workspace = true }
+# Used only by `ResilientSoupClient` for backoff jitter (issue #17).
+rand          = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["net", "rt", "macros", "time", "io-util", "test-util"] }
