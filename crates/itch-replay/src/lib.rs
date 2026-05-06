@@ -1,9 +1,45 @@
 #![forbid(unsafe_code)]
 #![doc = include_str!("../README.md")]
 
+use itch_protocol::messages::{
+    AddOrder, AddOrderWithMpid, BrokenTrade, CrossTrade, IpoQuotingPeriodUpdate,
+    MarketParticipantPosition, MwcbDeclineLevel, MwcbStatus, Noii, OrderCancel, OrderDelete,
+    OrderExecuted, OrderExecutedWithPrice, OrderReplace, RegShoRestriction, RetailPriceImprovement,
+    StockDirectory, StockTradingAction, SystemEvent, TradeNonCross,
+};
 use itch_protocol::{Message, ProtocolError};
 use std::io::Read;
 use thiserror::Error;
+
+/// Total wire length (tag + body) for an ITCH 5.0 message tag, or
+/// `None` if the tag is not one of the 20 known kinds.
+#[inline]
+fn message_total_len(tag: u8) -> Option<usize> {
+    let body = match tag {
+        b'S' => SystemEvent::BODY_LEN,
+        b'R' => StockDirectory::BODY_LEN,
+        b'H' => StockTradingAction::BODY_LEN,
+        b'Y' => RegShoRestriction::BODY_LEN,
+        b'L' => MarketParticipantPosition::BODY_LEN,
+        b'V' => MwcbDeclineLevel::BODY_LEN,
+        b'W' => MwcbStatus::BODY_LEN,
+        b'K' => IpoQuotingPeriodUpdate::BODY_LEN,
+        b'A' => AddOrder::BODY_LEN,
+        b'F' => AddOrderWithMpid::BODY_LEN,
+        b'E' => OrderExecuted::BODY_LEN,
+        b'C' => OrderExecutedWithPrice::BODY_LEN,
+        b'X' => OrderCancel::BODY_LEN,
+        b'D' => OrderDelete::BODY_LEN,
+        b'U' => OrderReplace::BODY_LEN,
+        b'P' => TradeNonCross::BODY_LEN,
+        b'Q' => CrossTrade::BODY_LEN,
+        b'B' => BrokenTrade::BODY_LEN,
+        b'I' => Noii::BODY_LEN,
+        b'N' => RetailPriceImprovement::BODY_LEN,
+        _ => return None,
+    };
+    Some(1 + body)
+}
 
 /// Captured message format.
 #[derive(Copy, Clone, Debug)]
@@ -53,7 +89,13 @@ impl<R: Read> MessageIterator<R> {
         }
     }
 
-    fn read_exact(&mut self, n: usize) -> Result<&[u8], ReplayError> {
+    /// Read exactly `n` bytes. Returns `Ok(Some(slice))` on
+    /// success, `Ok(None)` if EOF arrives before any byte is read
+    /// (clean end-of-stream), or `Err(Truncated)` if EOF arrives
+    /// after a partial read (mid-frame). The internal offset is
+    /// advanced by every byte actually read so the caller never
+    /// has to track it manually.
+    fn read_exact(&mut self, n: usize) -> Result<Option<&[u8]>, ReplayError> {
         if self.buf.len() < n {
             self.buf.resize(n, 0);
         }
@@ -64,14 +106,21 @@ impl<R: Read> MessageIterator<R> {
                 .read(&mut self.buf[read_total..n])
                 .map_err(|e| ReplayError::Io(e.to_string()))?;
             if nread == 0 {
+                if read_total == 0 {
+                    // Clean EOF — no bytes read for this frame.
+                    return Ok(None);
+                }
+                let off = self.offset + read_total as u64;
+                self.offset = off;
                 return Err(ReplayError::Truncated {
-                    offset: self.offset + read_total as u64,
+                    offset: off,
                     msg: format!("expected {} bytes, got EOF", n - read_total),
                 });
             }
             read_total += nread;
         }
-        Ok(&self.buf[..n])
+        self.offset += n as u64;
+        Ok(Some(&self.buf[..n]))
     }
 }
 
@@ -88,14 +137,15 @@ impl<R: Read> Iterator for MessageIterator<R> {
 
 impl<R: Read> MessageIterator<R> {
     fn next_glimpse(&mut self) -> Option<Result<Message, ReplayError>> {
-        // Read u16 BE length (= 1 + body len).
+        // Read u16 BE length prefix. EOF here = clean end-of-stream.
         let len_bytes = match self.read_exact(2) {
-            Ok(b) => b,
+            Ok(Some(b)) => b,
+            Ok(None) => return None,
             Err(e) => return Some(Err(e)),
         };
         let len = u16::from_be_bytes([len_bytes[0], len_bytes[1]]) as usize;
         if len == 0 {
-            return None; // End of stream.
+            return None; // Spec-compliant end-of-stream marker.
         }
 
         const MAX_MESSAGE_LEN: usize = 1024;
@@ -107,12 +157,18 @@ impl<R: Read> MessageIterator<R> {
             }));
         }
 
+        // EOF here is `Truncated`, not `None` — we've already
+        // committed to reading `len` bytes after the prefix.
         let frame = match self.read_exact(len) {
-            Ok(b) => b.to_vec(),
+            Ok(Some(b)) => b.to_vec(),
+            Ok(None) => {
+                return Some(Err(ReplayError::Truncated {
+                    offset: self.offset,
+                    msg: format!("expected {len} bytes after length prefix, got EOF"),
+                }));
+            }
             Err(e) => return Some(Err(e)),
         };
-
-        self.offset += 2 + len as u64;
 
         match Message::decode(&frame) {
             Ok(msg) => Some(Ok(msg)),
@@ -121,50 +177,53 @@ impl<R: Read> MessageIterator<R> {
     }
 
     fn next_raw_bodies(&mut self) -> Option<Result<Message, ReplayError>> {
-        // Read bytes incrementally until we have a complete message.
-        let mut frame = Vec::new();
+        // ITCH 5.0 messages all have fixed tag-determined wire
+        // lengths. Peek the 1-byte tag, look up the expected total
+        // length, then read the body in one shot — bounded and
+        // allocation-light.
         const MAX_MESSAGE_LEN: usize = 1024;
+        let tag_slice = match self.read_exact(1) {
+            Ok(Some(b)) => b,
+            Ok(None) => return None,
+            Err(e) => return Some(Err(e)),
+        };
+        let tag = tag_slice[0];
 
-        loop {
-            // Try to decode what we have so far.
-            if !frame.is_empty() {
-                match Message::decode(&frame) {
-                    Ok(msg) => {
-                        self.offset += frame.len() as u64;
-                        return Some(Ok(msg));
-                    }
-                    Err(ProtocolError::Truncated { need, .. }) => {
-                        // Need more bytes; keep reading.
-                        let need_more = need - frame.len();
-                        if need > MAX_MESSAGE_LEN {
-                            return Some(Err(ReplayError::FrameTooLarge {
-                                offset: self.offset,
-                                got: need,
-                                max: MAX_MESSAGE_LEN,
-                            }));
-                        }
-                        let chunk = match self.read_exact(need_more) {
-                            Ok(b) => b.to_vec(),
-                            Err(e) => return Some(Err(e)),
-                        };
-                        frame.extend_from_slice(&chunk);
-                    }
-                    Err(e) => return Some(Err(ReplayError::Protocol(e))),
-                }
-            } else {
-                // Read initial byte.
-                let initial = match self.read_exact(1) {
-                    Ok(b) => b.to_vec(),
-                    Err(e) => {
-                        // EOF on initial read is normal (no more messages).
-                        if let ReplayError::Truncated { .. } = &e {
-                            return None;
-                        }
-                        return Some(Err(e));
-                    }
-                };
-                frame = initial;
+        let total = match message_total_len(tag) {
+            Some(n) => n,
+            None => {
+                return Some(Err(ReplayError::Protocol(
+                    ProtocolError::UnknownMessageType(tag),
+                )));
             }
+        };
+
+        if total > MAX_MESSAGE_LEN {
+            return Some(Err(ReplayError::FrameTooLarge {
+                offset: self.offset,
+                got: total,
+                max: MAX_MESSAGE_LEN,
+            }));
+        }
+
+        let remaining = total - 1;
+        let body = match self.read_exact(remaining) {
+            Ok(Some(b)) => b.to_vec(),
+            Ok(None) => {
+                return Some(Err(ReplayError::Truncated {
+                    offset: self.offset,
+                    msg: format!("expected {remaining} body bytes after tag 0x{tag:02X}, got EOF"),
+                }));
+            }
+            Err(e) => return Some(Err(e)),
+        };
+        let mut frame = Vec::with_capacity(total);
+        frame.push(tag);
+        frame.extend_from_slice(&body);
+
+        match Message::decode(&frame) {
+            Ok(msg) => Some(Ok(msg)),
+            Err(e) => Some(Err(ReplayError::Protocol(e))),
         }
     }
 }

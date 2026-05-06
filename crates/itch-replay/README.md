@@ -4,14 +4,17 @@ Streams ITCH messages from `.itch` capture files. Supports NASDAQ Glimpse archiv
 
 ## Quick Start
 
-```rust
+```rust,no_run
 use itch_replay::{iter_messages, CaptureFormat};
 use std::fs::File;
 
-let file = File::open("capture.itch")?;
-for msg in iter_messages(file, CaptureFormat::Glimpse) {
-    let msg = msg?;
-    println!("{:?}", msg);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::open("capture.itch")?;
+    for msg in iter_messages(file, CaptureFormat::Glimpse) {
+        let msg = msg?;
+        println!("{:?}", msg);
+    }
+    Ok(())
 }
 ```
 
