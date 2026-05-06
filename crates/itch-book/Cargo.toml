@@ -1,0 +1,27 @@
+[package]
+name        = "itch-book"
+description = "Order-book reconstruction (L2 price levels) from a stream of ITCH 5.0 messages"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+keywords.workspace     = true
+categories.workspace   = true
+
+[dependencies]
+itch-protocol = { workspace = true }
+thiserror     = { workspace = true }
+
+# Optional thin async adapter that consumes a `Stream<Item = Result<Message, _>>`
+# and feeds messages into an `L2Book`. Default features stay sync-only — no
+# runtime dependency unless the consumer opts in.
+tokio   = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+[features]
+default = []
+# Enables the async helper `apply_stream` that drains a `futures::Stream`
+# of decoded messages into an `L2Book`. Pulls in `tokio` and `futures`.
+tokio-stream = ["dep:tokio", "dep:futures"]
