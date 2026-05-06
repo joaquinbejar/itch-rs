@@ -30,8 +30,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 [features]
 default = []
 # `integration` enables the `tests/integration.rs` end-to-end test
-# target, which depends on `SoupServer` (issue #18) and
-# `ResilientSoupClient` (issue #17). Enable once those PRs are
-# merged so the tests link against the public API. Run with:
+# target. With #17 + #18 now on main the tests link against the
+# public API. Run with:
 #   cargo test -p itch-soup --features integration --test integration
 integration = []
