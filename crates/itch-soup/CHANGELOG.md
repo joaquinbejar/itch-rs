@@ -68,6 +68,39 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 - New `rand = "0.8"` dependency, used **only** in `resilient.rs`
   for backoff jitter (no other entry points). Approved by issue
   #17 ticket text.
+- **`Stream<Item = Result<Message, SoupError>>` for `SoupConnection`**
+  (issue #16). `SoupConnection` now implements `futures::Stream`
+  directly; the existing `next_message()` method is a thin async
+  wrapper around it. Filter rules (per
+  `docs/TRANSPORT-SPEC.md` §3.4):
+  - `S` Sequenced Data → decoded into `itch_protocol::Message`;
+    `next_expected_sequence` advances **on success only** so a
+    failed inner ITCH decode doesn't desync reconnect.
+  - `H` Server Heartbeat → consumed silently; the heartbeat
+    scheduler tracks liveness on its own.
+  - `+` Debug → routed to a lazy
+    `SoupConnection::debug_packets() -> mpsc::Receiver<Vec<u8>>`
+    if subscribed, otherwise dropped silently. Bounded buffer
+    (16 packets) so the connection can never block waiting for
+    a slow debug consumer.
+  - `Z` End-of-Session → emitted **once** as
+    `Some(Err(SessionEnded))`; subsequent polls yield `None`.
+  - Stray `A` / `J` outside the handshake →
+    `Err(UnexpectedHandshakePacket { tag })`.
+  - Client-direction packet (`L` / `U` / `R` / `O`) on the read
+    half → typed `Err(SoupFraming { reason: "client-direction
+    packet on a server stream" })`.
+- **`SoupConnection::send_unsequenced(Message)`** (canonical name
+  for the existing `send` alias) wraps the outbound write in a
+  configurable timeout (`DEFAULT_SEND_TIMEOUT = 250 ms`,
+  overridable via `with_send_timeout`). A writer that cannot
+  drain within the budget returns
+  `Err(SoupError::Io(io::ErrorKind::WouldBlock))` rather than
+  blocking forever — honours `docs/TRANSPORT-SPEC.md` §7.1.
+- New `SoupError::SoupFraming { reason: &'static str }` variant
+  for spec-violation events that don't fit a more specific
+  variant (currently: client-direction packet on a server
+  stream; reserved for future broadcast-lag drops in `SoupServer`).
 - Four new structured `SoupError` variants:
   `SessionMismatch { requested, got }` (server's `LoginAccepted`
   returned a different session than an explicit non-empty request),
