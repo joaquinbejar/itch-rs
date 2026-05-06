@@ -32,3 +32,14 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - `l3` Cargo feature (default ON) gating the L3 fields and methods on
   `BookManager`. Disable via `--no-default-features` for an L2-only
   build; the `l3` module itself is always compiled.
+- `OhlcvAccumulator` + `OhlcvBar` — per-symbol open/high/low/
+  close/volume + trade-count accumulator over P / Q / C
+  printable trade prints. Drives the v0.4 acceptance EOD
+  validation harness.
+- Synthetic-day EOD validation test in
+  `tests/eod_validation.rs` (3 symbols, ~50 messages, expected
+  OHLCV asserted to 0 cents).
+- `vendor-captures` Cargo feature (off by default) gating the
+  future public-capture EOD validator. The synthetic-day path
+  runs unconditionally; the placeholder test is `#[ignore]` until
+  a NASDAQ-licensed capture lands under `vendor/captures/`.

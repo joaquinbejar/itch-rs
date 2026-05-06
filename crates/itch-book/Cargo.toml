@@ -34,3 +34,10 @@ l3 = []
 # `futures::Stream<Item = Result<Message, ProtocolError>>` into a
 # `BookManager`. Pulls in `tokio` and `futures`.
 tokio-stream = ["dep:tokio", "dep:futures"]
+# Enables the EOD validation path that consumes a NASDAQ-licensed
+# capture under `vendor/captures/`. The synthetic-day harness in
+# `tests/eod_validation.rs` runs unconditionally; the capture-backed
+# tests are gated behind this feature so OSS clones do not require a
+# bundled vendor file. See `docs/TESTING.md` §10 for the migration
+# path from synthetic-day → public capture.
+vendor-captures = []

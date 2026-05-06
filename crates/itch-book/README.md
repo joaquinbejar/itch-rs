@@ -117,12 +117,54 @@ Under the `tokio-stream` feature, `BookManager::run` drains a
 `futures::Stream<Item = Result<Message, ProtocolError>>` into the
 manager; upstream decode errors surface as `BookError::Protocol`.
 
+## OHLCV / EOD validation
+
+`OhlcvAccumulator` is the per-symbol open / high / low / close +
+volume + trade-count summary that drives the v0.4 acceptance bound
+"replaying a sample day's ITCH against `itch-book` reproduces NASDAQ's
+end-of-day prints within 0 cents difference". It is a sibling of
+`BookManager`: same `apply(&Message)` shape, same exhaustive 20-
+variant match, but instead of reconstructing per-symbol resting books
+it folds every printable trade print into a per-symbol `OhlcvBar`.
+
+```rust
+use itch_book::{BookManager, OhlcvAccumulator};
+use itch_protocol::{Message, StockLocate};
+
+# fn run(stream: impl IntoIterator<Item = Message>) {
+let mut mgr = BookManager::new();
+let mut ohlcv = OhlcvAccumulator::new();
+for msg in stream {
+    let _ = mgr.apply(&msg);
+    ohlcv.apply(&msg);
+}
+let aapl = StockLocate::from_u16(1);
+if let Some(bar) = ohlcv.bar(aapl) {
+    let _ = (bar.open, bar.high, bar.low, bar.close, bar.volume);
+}
+# }
+```
+
+Trade-printing variants consumed: `P` Trade (Non-Cross),
+`Q` Cross Trade, and `C` Order Executed With Price when
+`printable == Printable::Printable`. `E` Order Executed is
+deliberately a no-op — NASDAQ pairs every printable `E` with a `P`
+print on the public tape, so consuming both would double-count. Every
+other ITCH 5.0 variant is an explicit no-op arm.
+
+The synthetic-day EOD validator lives in `tests/eod_validation.rs`
+(3 symbols, ~50 messages, expected OHLCV asserted at the cent level).
+The complementary public-capture path is gated behind the
+`vendor-captures` Cargo feature; see `docs/TESTING.md` for the
+migration plan.
+
 ## Cargo features
 
-| Feature        | Default | Effect                                                       |
-|----------------|:-------:|--------------------------------------------------------------|
-| `l3`           |   on    | Enables L3 fields / methods on `BookManager`. The `l3` module itself is always compiled. Disable with `--no-default-features` for an L2-only manager. |
-| `tokio-stream` |   off   | Enables `BookManager::run`, the async stream adapter. Pulls in `tokio` and `futures`. |
+| Feature           | Default | Effect                                                       |
+|-------------------|:-------:|--------------------------------------------------------------|
+| `l3`              |   on    | Enables L3 fields / methods on `BookManager`. The `l3` module itself is always compiled. Disable with `--no-default-features` for an L2-only manager. |
+| `tokio-stream`    |   off   | Enables `BookManager::run`, the async stream adapter. Pulls in `tokio` and `futures`. |
+| `vendor-captures` |   off   | Enables the placeholder test that anchors a future public-capture EOD validator. Requires a NASDAQ-licensed capture under `vendor/captures/`; the synthetic-day harness runs unconditionally. |
 
 ## License
 

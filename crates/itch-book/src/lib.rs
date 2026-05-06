@@ -15,6 +15,9 @@
 //! - **Multi-symbol manager** indexed by
 //!   [`StockLocate`](itch_protocol::StockLocate) — see
 //!   [`BookManager`].
+//! - **Per-symbol OHLCV accumulator** over printable trade prints —
+//!   see [`OhlcvAccumulator`]. Drives the v0.4 acceptance EOD
+//!   validation harness.
 //! - Sync apply path; no transport dependency, no allocator on the
 //!   steady-state hot path beyond a bounded `BTreeMap` / `HashMap`
 //!   insert per new order.
@@ -33,6 +36,9 @@
 //! - [`l3`] — [`L3Book`] and the [`L3OrderEntry`] record (FIFO queue
 //!   priority, `summary_l2()` cross-check).
 //! - [`manager`] — [`BookManager`], the multi-symbol router.
+//! - [`ohlcv`] — [`OhlcvAccumulator`] and [`OhlcvBar`], the per-
+//!   symbol open/high/low/close + volume + trade-count summary over
+//!   printable trade prints.
 //! - [`error`] — [`BookError`], the only error type returned by
 //!   [`L2Book::apply`], [`L3Book::apply`], and
 //!   [`BookManager::apply`].
@@ -73,8 +79,10 @@ pub mod book;
 pub mod error;
 pub mod l3;
 pub mod manager;
+pub mod ohlcv;
 
 pub use book::{L2Book, OrderEntry};
 pub use error::BookError;
 pub use l3::{L3Book, L3OrderEntry};
 pub use manager::BookManager;
+pub use ohlcv::{OhlcvAccumulator, OhlcvBar};
