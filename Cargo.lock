@@ -274,6 +274,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "itch-soup"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "itch-protocol",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "itch-source"
 version = "0.1.0"
 dependencies = [
