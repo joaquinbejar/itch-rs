@@ -45,11 +45,21 @@ and this project adheres to per-crate
 - 24 unit tests cover every documented codec failure mode plus
   encode → decode equality for data, heartbeat, and
   end-of-session packets.
+- **`MoldStream` receiver + `MoldEvent`** (`Message`, `Heartbeat`,
+  `EndOfSession`, `Gap`) plus `MoldConfig`. `MoldStream::join` opens
+  a UDP socket, joins the multicast group, and yields
+  `Result<MoldEvent, MoldError>` per `futures::Stream`.
+- **Heartbeat / silent-link detection** (1 s warning, 15 s
+  dead-link). Configurable via `MoldConfig::with_silence`.
+- **In-order delivery + foundational gap detection** per
+  ADR-0010 with bounded pending buffer (default 10 000).
+- **End-of-session** (`MsgCount = 0xFFFF`).
+- 9 receiver unit tests using `tokio::time::pause`.
 
 ### Notes
 
 - `#![forbid(unsafe_code)]` on every module.
 - Crate is registered in the workspace and exposes a `MoldResult<T>`
   alias for ergonomic `?` propagation.
-- Receiver (`MoldStream`), gap recovery, request server, publisher,
-  and integration tests land in issues #21–#26.
+- Receiver (`MoldStream`) lands in #21 (this release); gap recovery,
+  request server, publisher, and integration tests land in #22–#26.

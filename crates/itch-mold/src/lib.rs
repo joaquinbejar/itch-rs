@@ -48,12 +48,19 @@
 
 mod codec;
 mod error;
+mod event;
+mod receiver;
 
 pub use codec::{
     session_from_str, MessageBlock, MoldPacket, MoldPacketHeader, BLOCK_LEN_PREFIX,
     DEFAULT_PACKING_MTU, HEADER_LEN, MAX_BLOCK_LEN, MSG_COUNT_END_OF_SESSION, MSG_COUNT_HEARTBEAT,
 };
 pub use error::MoldError;
+pub use event::MoldEvent;
+pub use receiver::{
+    MoldConfig, MoldStream, DEFAULT_MAX_PENDING, DEFAULT_SILENCE_DEAD_LINK,
+    DEFAULT_SILENCE_WARNING, RECV_BUFFER_LEN,
+};
 
 /// Convenience alias used across the receiver / publisher API.
 pub type MoldResult<T> = Result<T, MoldError>;
