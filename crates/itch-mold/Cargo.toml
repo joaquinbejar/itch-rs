@@ -1,0 +1,32 @@
+[package]
+name        = "itch-mold"
+description = "MoldUDP64 V1.00 multicast transport for itch-protocol"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+keywords.workspace     = true
+categories.workspace   = true
+
+[dependencies]
+itch-protocol = { workspace = true }
+itch-source   = { workspace = true }
+thiserror     = { workspace = true }
+tokio         = { workspace = true, features = ["net", "rt", "macros", "time", "sync", "io-util"] }
+bytes         = { workspace = true }
+futures       = { workspace = true }
+tracing       = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "rt", "macros", "time", "sync", "io-util", "test-util", "rt-multi-thread"] }
+tokio-test = "0.4"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+
+[features]
+default = []
+# Enables end-to-end integration tests (issue #26) that spawn a
+# publisher and a receiver on real UDP sockets. Skip-not-fail when
+# the host cannot loopback multicast.
+integration = []

@@ -8,43 +8,20 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`SoupServer`** (issue #18). Server-side SoupBinTCP publisher
+  generic over the three `itch-source` traits (`MessageSource`,
+  `SeqStore`, `SubscriptionPolicy`) per ADR-0012.
+- New hard dependency: `itch-source` (per ADR-0012).
 - **End-to-end integration tests** (`tests/integration.rs`,
   issue #19). Drives a real `SoupServer` from a real
   `SoupConnection` / `ResilientSoupClient` through every
-  documented exchange:
-  - happy-path: 1000 sequenced messages in monotone order;
-  - login rejection: bad password → `NotAuthorized`;
-  - session-id mismatch → `SessionUnavailable`;
-  - server-killed mid-session → typed disconnect surfaces;
-  - reconnect-with-resume via base `SoupConnection` (manual);
-  - `ResilientSoupClient` recovers across socket drops;
-  - 2 concurrent clients receive the same fan-out;
-  - `logout()` closes cleanly;
-  - graceful EOS on source exhaustion;
-  - heartbeat packets filtered from the client's stream.
-  Gated behind `--cfg soup_integration_tests` so
-  `cargo clippy --all-features` stays clean while #17 and
-  #18 are still in-flight. Run after merging the two
-  prerequisite PRs:
-
-  ```bash
-  RUSTFLAGS="--cfg soup_integration_tests" \
-      cargo test -p itch-soup --test integration
-  ```
-
-### Documented
-
-- `[lints.rust]` `check-cfg` for the new `soup_integration_tests`
-  custom cfg flag so unguarded usages surface as compiler
-  warnings.
-
-### Changed
-
-- New dev-deps: `itch-source` (used by integration helpers),
-  `tracing-subscriber` (test-only; set up via
-  `tracing_subscriber::fmt::TestWriter` per
-  `docs/TESTING.md`).
-
+  documented exchange: happy-path (1000 sequenced messages),
+  login rejection (NotAuthorized + SessionUnavailable),
+  server-killed mid-session, reconnect-with-resume,
+  ResilientSoupClient recovers across socket drops, 2 concurrent
+  clients fan-out, logout cleanly, graceful EOS, heartbeat
+  packets filtered. Gated behind the `integration` Cargo feature.
+- New dev-deps: `tracing-subscriber` (test-only).
 - **Login state machine** (`SoupConnection`, `login`,
   `login_with_timeout`, `SoupCredentials`,
   `DEFAULT_LOGIN_TIMEOUT`). Performs the
@@ -74,6 +51,37 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
   to avoid wall-clock flakiness. Primitives can be integrated into
   `SoupConnection` via a future `login_with_heartbeat()` variant or
   used standalone.
+- **`ResilientSoupClient` + `ResilientSoupConfig`** (issue #17,
+  ADR-0009 resilience layer). Wraps `SoupConnection` with auto-
+  reconnect, sequence resume, and exponential backoff with jitter
+  (per `docs/TRANSPORT-SPEC.md` §3.7,
+  `rules/global_rules.md`):
+  - Round-robin across `addrs: Vec<SocketAddr>` on each reconnect.
+  - Pinned `requested_session: Option<String>` carried unchanged
+    across reconnects; `initial_sequence: u64` honoured on the
+    first connect, `next_expected_sequence` from the live
+    connection on every subsequent reconnect.
+  - Exponential backoff with uniform jitter sampled from
+    `[backoff_min, min(backoff_max, backoff_min << attempt)]`
+    (default 100 ms → 30 s).
+  - `max_attempts: Option<u32>` retry budget; `None` retries
+    forever.
+  - `LoginRejected(_)` and `SessionMismatch { .. }` are fatal:
+    surfaced once then `next_message()` returns `None`.
+  - `Protocol(_)` errors are forwarded but do NOT trigger
+    reconnect — the inner `SoupConnection` resumes in place.
+  - Observability: `last_session()`, `next_expected_sequence()`.
+  - `into_stream() -> impl Stream<Item = Result<Message,
+    SoupError>> + Send + Unpin` adapter for combinator usage.
+  - 9 unit tests via in-process `tokio::net::TcpListener` mock
+    server: socket-drop resume, fatal `LoginRejected`,
+    `max_attempts` exhausted, multi-addr round-robin failover,
+    backoff-bounds invariant, initial-state observability,
+    `Send + Unpin` and `Arc<Mutex<_>>` compile checks,
+    `into_stream()` smoke.
+- New `rand = "0.8"` dependency, used **only** in `resilient.rs`
+  for backoff jitter (no other entry points). Approved by issue
+  #17 ticket text.
 - **`Stream<Item = Result<Message, SoupError>>` for `SoupConnection`**
   (issue #16). `SoupConnection` now implements `futures::Stream`
   directly; the existing `next_message()` method is a thin async
