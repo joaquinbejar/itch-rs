@@ -1,0 +1,26 @@
+[package]
+name        = "itch-source-kafka"
+description = "Kafka-backed MessageSource for ITCH 5.0 publishers"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+keywords.workspace     = true
+categories.workspace   = true
+
+[dependencies]
+itch-protocol = { workspace = true }
+itch-source   = { workspace = true }
+thiserror     = { workspace = true }
+tracing       = { workspace = true }
+futures       = { workspace = true }
+rdkafka       = { version = "0.36", default-features = false, features = ["tokio", "cmake-build"] }
+tokio         = { workspace = true, features = ["rt", "time", "macros"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "time", "macros", "sync", "rt-multi-thread"] }
+
+[package.metadata.docs.rs]
+all-features = true
