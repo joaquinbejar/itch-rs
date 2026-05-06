@@ -37,11 +37,13 @@ bytes         = "1"
 futures       = "0.3"
 tracing       = "0.1"
 
-# Internal crates
-itch-protocol    = { path = "crates/itch-protocol",    version = "0.1.0" }
-itch-tcp         = { path = "crates/itch-tcp",         version = "0.1.0" }
-itch-soup        = { path = "crates/itch-soup",        version = "0.1.0" }
-itch-mold        = { path = "crates/itch-mold",        version = "0.1.0" }
+# Internal crates — promoted to 1.0 (#42, #44): itch-protocol,
+# itch-tcp, itch-soup, itch-mold, itch-rs (meta). The remainder
+# stay on 0.x for now and ship 1.0 in a later coordinated release.
+itch-protocol    = { path = "crates/itch-protocol",    version = "1.0" }
+itch-tcp         = { path = "crates/itch-tcp",         version = "1.0" }
+itch-soup        = { path = "crates/itch-soup",        version = "1.0" }
+itch-mold        = { path = "crates/itch-mold",        version = "1.0" }
 itch-compressed  = { path = "crates/itch-compressed",  version = "0.1.0" }
 itch-source      = { path = "crates/itch-source",      version = "0.1.0" }
 itch-conformance = { path = "crates/itch-conformance", version = "0.1.0" }

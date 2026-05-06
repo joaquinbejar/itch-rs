@@ -983,7 +983,7 @@ dependencies = [
 
 [[package]]
 name = "itch-mold"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bytes",
  "criterion",
@@ -1004,7 +1004,7 @@ version = "0.1.0"
 
 [[package]]
 name = "itch-protocol"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "criterion",
  "proptest",
@@ -1025,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "itch-rs"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "futures",
  "itch-mold",
@@ -1054,7 +1054,7 @@ dependencies = [
 
 [[package]]
 name = "itch-soup"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bytes",
  "criterion",
@@ -1125,7 +1125,7 @@ dependencies = [
 
 [[package]]
 name = "itch-tcp"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bytes",
  "futures",
