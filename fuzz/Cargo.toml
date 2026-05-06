@@ -1,0 +1,49 @@
+[package]
+name = "itch-rs-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bytes         = "1"
+itch-protocol = { path = "../crates/itch-protocol" }
+itch-tcp      = { path = "../crates/itch-tcp" }
+itch-soup     = { path = "../crates/itch-soup" }
+itch-mold     = { path = "../crates/itch-mold" }
+tokio-util    = { version = "0.7", features = ["codec"] }
+
+[[bin]]
+name              = "message_decode"
+path              = "fuzz_targets/message_decode.rs"
+test              = false
+doc               = false
+bench             = false
+
+[[bin]]
+name              = "itch_codec_decode"
+path              = "fuzz_targets/itch_codec_decode.rs"
+test              = false
+doc               = false
+bench             = false
+
+[[bin]]
+name              = "soup_packet_decode"
+path              = "fuzz_targets/soup_packet_decode.rs"
+test              = false
+doc               = false
+bench             = false
+
+[[bin]]
+name              = "mold_packet_decode"
+path              = "fuzz_targets/mold_packet_decode.rs"
+test              = false
+doc               = false
+bench             = false
+
+[workspace]
+# Stand-alone workspace so cargo-fuzz nightly toolchain doesn't drag
+# the whole project into a different build profile.
