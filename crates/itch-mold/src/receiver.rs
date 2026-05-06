@@ -54,11 +54,13 @@ pub const DEFAULT_SILENCE_DEAD_LINK: Duration = Duration::from_secs(15);
 /// for now we drop oldest with a warning.
 pub const DEFAULT_MAX_PENDING: usize = 10_000;
 
-/// Maximum UDP datagram the receiver will accept. 2 KiB is enough
-/// for any well-formed MoldUDP64 packet (header 20 B + many small
-/// blocks fitting under the 1500 B Ethernet MTU); anything larger
-/// is treated as a framing error.
-pub const RECV_BUFFER_LEN: usize = 2048;
+/// Maximum UDP datagram the receiver will accept. The full IPv4
+/// payload is ~65 507 B; we round up to the next power-of-two
+/// (`64 KiB + 64 B = 65 600`) so a path-MTU misconfiguration on
+/// the publisher does not silently truncate packets at the kernel
+/// boundary. Well-formed MoldUDP64 packets stay well under MTU,
+/// but the codec rejects oversized blocks via `MAX_BLOCK_LEN`.
+pub const RECV_BUFFER_LEN: usize = 65_536;
 
 /// Configuration for [`MoldStream`].
 #[derive(Debug, Clone)]
@@ -367,8 +369,11 @@ impl MoldStream {
     ///
     /// # Errors
     ///
-    /// - I/O errors from `UdpSocket::bind`, `set_reuse_address`,
-    ///   `join_multicast_v4`.
+    /// - I/O errors from `UdpSocket::bind`, `set_broadcast`, or
+    ///   `join_multicast_v4`. Callers that need `SO_REUSEADDR` /
+    ///   `SO_REUSEPORT` for shared-port multicast should construct
+    ///   the socket via `socket2` / `tokio::net::UdpSocket::from_std`
+    ///   and pass it to `MoldStream::from_socket`.
     pub async fn join(cfg: MoldConfig) -> Result<Self, MoldError> {
         let bind_addr: SocketAddr = match cfg.multicast_group {
             SocketAddr::V4(v4) => SocketAddr::from(([0u8, 0, 0, 0], v4.port())),
@@ -477,9 +482,19 @@ impl MoldStream {
     }
 
     /// Re-arm the silence timer to fire at the next interesting
-    /// deadline given current state.
+    /// deadline given current state. Once the dead-link timer has
+    /// already fired (`dead_link_pending == true`), arming for a
+    /// new dead-link tick at `last_seen + dead_link` would make the
+    /// timer fire repeatedly with `check_silence` short-circuiting
+    /// to `None` — wasted polls. Park the timer far in the future
+    /// in that case so it stays inert until the next `touch_packet`
+    /// resets the state.
     fn rearm_silence_timer(&mut self) {
-        let target = if !self.soft_warned {
+        let target = if self.dead_link_pending {
+            // Effectively "never": re-armed by `touch_packet` once a
+            // real packet arrives.
+            self.last_seen + Duration::from_secs(60 * 60 * 24 * 365)
+        } else if !self.soft_warned {
             self.last_seen + self.cfg.silence_warning
         } else {
             self.last_seen + self.cfg.silence_dead_link
@@ -519,19 +534,30 @@ impl Stream for MoldStream {
         }
 
         // No buffered events. Read more datagrams or check silence.
+        // Cap inner-loop iterations so a stream of fully-retransmitted
+        // late packets cannot starve the runtime; after the budget
+        // we yield via `Poll::Pending` and let the next poll resume.
+        const RECV_BUDGET: usize = 32;
+        let mut recv_count = 0usize;
         loop {
             // Try to receive a datagram (only if we have a socket).
-            if let Some(sock) = self.socket.as_ref() {
-                let mut tmp = [0u8; RECV_BUFFER_LEN];
-                let mut buf = tokio::io::ReadBuf::new(&mut tmp);
-                match sock.poll_recv_from(cx, &mut buf) {
+            // Reuse `self.buf` so we don't allocate a 64 KiB stack
+            // buffer on every poll. Split the borrow manually so the
+            // immutable borrow of the socket and the mutable borrow
+            // of the buffer don't overlap.
+            let socket_present = self.socket.is_some();
+            if socket_present {
+                self.buf.clear();
+                self.buf.resize(RECV_BUFFER_LEN, 0);
+                let MoldStream {
+                    socket, buf: dst, ..
+                } = &mut *self;
+                let sock = socket.as_ref().expect("socket_present");
+                let mut read = tokio::io::ReadBuf::new(dst);
+                match sock.poll_recv_from(cx, &mut read) {
                     Poll::Ready(Ok(_peer)) => {
-                        let n = buf.filled().len();
-                        // Capture into `self.buf` so we can decode without
-                        // holding the borrow on `tmp`.
-                        let bytes = &tmp[..n];
-                        self.buf.clear();
-                        self.buf.extend_from_slice(bytes);
+                        let n = read.filled().len();
+                        self.buf.truncate(n);
                         self.touch_packet();
                         match MoldPacket::decode(&self.buf) {
                             Ok(pkt) => self.state.ingest(pkt),
@@ -547,8 +573,14 @@ impl Stream for MoldStream {
                             }
                             return Poll::Ready(Some(event));
                         }
-                        // No event surfaced (e.g. fully-retransmitted late packet);
-                        // try another recv.
+                        // No event surfaced (e.g. fully-retransmitted
+                        // late packet); try another recv up to the
+                        // budget, then yield.
+                        recv_count += 1;
+                        if recv_count >= RECV_BUDGET {
+                            cx.waker().wake_by_ref();
+                            return Poll::Pending;
+                        }
                         continue;
                     }
                     Poll::Ready(Err(err)) => {
