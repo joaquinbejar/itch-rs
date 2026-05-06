@@ -22,4 +22,15 @@ tracing       = { workspace = true }
 rand          = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["net", "rt", "macros", "time", "io-util", "test-util"] }
+tokio = { workspace = true, features = ["net", "rt", "macros", "time", "io-util", "test-util", "rt-multi-thread"] }
+itch-source = { workspace = true }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+
+[features]
+default = []
+# `integration` enables the `tests/integration.rs` end-to-end test
+# target, which depends on `SoupServer` (issue #18) and
+# `ResilientSoupClient` (issue #17). Enable once those PRs are
+# merged so the tests link against the public API. Run with:
+#   cargo test -p itch-soup --features integration --test integration
+integration = []
