@@ -101,6 +101,35 @@ fuzz-list: ## List the configured fuzz targets
 
 pre-push: fix fmt lint-fix test doc ## Canonical pre-push gate
 
+# ---------- 1.0 release gates ----------
+
+# Promoted crates that ship a 1.0 release. Update this list when
+# adding or removing crates from the 1.0 promotion set (see #42).
+RELEASE_CRATES ?= itch-protocol itch-tcp itch-soup itch-mold
+
+public-api: ## Print the full public API of every promoted crate (requires `cargo install cargo-public-api`)
+	@for c in $(RELEASE_CRATES); do \
+		echo "==> $$c"; \
+		$(CARGO) public-api -p $$c || exit $$?; \
+	done
+
+semver-check: ## Validate no breaking change since the last published version of each promoted crate (requires `cargo install cargo-semver-checks`)
+	@for c in $(RELEASE_CRATES); do \
+		echo "==> $$c"; \
+		$(CARGO) semver-checks check-release -p $$c || exit $$?; \
+	done
+
+check-msrv: ## Build + test every promoted crate against the pinned MSRV (requires the MSRV toolchain installed via `rustup toolchain install`)
+	@MSRV=$$(grep -E '^rust-version' crates/itch-protocol/Cargo.toml | head -1 | sed -E 's/.*"([0-9.]+)".*/\1/'); \
+	if [ -z "$$MSRV" ]; then echo "could not detect MSRV from crates/itch-protocol/Cargo.toml"; exit 1; fi; \
+	echo "MSRV: $$MSRV"; \
+	for c in $(RELEASE_CRATES); do \
+		echo "==> $$c (build)"; $(CARGO) +$$MSRV build -p $$c || exit $$?; \
+		echo "==> $$c (test)";  $(CARGO) +$$MSRV test  -p $$c || exit $$?; \
+	done
+
+pre-publish: pre-push public-api semver-check check-msrv ## Full pre-publish gate (1.0 release-readiness)
+
 # ---------- workflow helpers ----------
 
 workflow-list: ## List GitHub Actions workflow runs
@@ -116,4 +145,5 @@ clean: ## Cargo clean
 
 .PHONY: help build release test run fmt fmt-check lint lint-fix check fix \
         doc coverage coverage-html bench bench-save bench-compare fuzz \
-        pre-push workflow-list workflow-view clean
+        pre-push public-api semver-check check-msrv pre-publish \
+        workflow-list workflow-view clean

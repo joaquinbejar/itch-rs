@@ -146,6 +146,11 @@ impl Shares {
 pub struct Timestamp(u64);
 
 /// Reasons a `Timestamp::try_new` can reject the input.
+///
+/// `#[non_exhaustive]` is intentional: future ITCH revisions or
+/// stricter validation may add reject reasons; consumers must
+/// match with a fallback arm.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TimestampError {
     /// Value exceeds the u48 range `[0, 2^48 - 1]`.
