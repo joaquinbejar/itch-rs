@@ -30,12 +30,15 @@
 //! sends `A` or `J`. The data-phase has no per-message timeout — that
 //! belongs to the heartbeat scheduler in a later issue.
 
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures::sink::SinkExt;
-use futures::stream::StreamExt;
+use futures::stream::{Stream, StreamExt};
 use itch_protocol::Message;
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::sync::mpsc;
 use tokio_util::codec::Framed;
 
 use crate::{LoginAccepted, LoginRequest, SoupCodec, SoupError, SoupPacket};
@@ -44,6 +47,19 @@ use crate::{LoginAccepted, LoginRequest, SoupCodec, SoupError, SoupPacket};
 /// `LoginAccepted` / `LoginRejected` reply before giving up with
 /// [`SoupError::LoginTimeout`].
 pub const DEFAULT_LOGIN_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Default upper bound on how long [`SoupConnection::send_unsequenced`]
+/// waits for the underlying writer to drain before giving up with an
+/// `Io::WouldBlock`-style error. Honours the project-wide "never
+/// block forever on send" rule from `docs/TRANSPORT-SPEC.md` §7.1.
+pub const DEFAULT_SEND_TIMEOUT: Duration = Duration::from_millis(250);
+
+/// Bounded capacity of the lazy `+` Debug packet channel. Once a
+/// caller subscribes via [`SoupConnection::debug_packets`], up to
+/// this many packets may queue before further `+` packets are
+/// dropped silently (the connection itself never blocks waiting for
+/// the user's debug receiver).
+const DEBUG_CHANNEL_CAPACITY: usize = 16;
 
 /// Username / password pair sent in the `Login Request` packet.
 ///
@@ -97,8 +113,23 @@ pub struct SoupConnection<S> {
     session: String,
     /// Next sequenced-data sequence number we expect to deliver. The
     /// server's `Login Accepted` payload populates this, and each
-    /// successful [`SoupConnection::next_message`] increments it.
+    /// successful sequenced-data delivery increments it. A sequenced
+    /// data packet whose body fails to decode does NOT advance this
+    /// counter so a reconnect with `requested_sequence =
+    /// next_expected_sequence()` reliably re-fetches the bad
+    /// message.
     expected_sequence: u64,
+    /// Set once a `Z EndOfSession` has been surfaced as
+    /// [`SoupError::SessionEnded`]. Subsequent stream polls return
+    /// `None` so consumers see a single typed signal followed by a
+    /// clean stream end.
+    session_ended: bool,
+    /// Bounded sender for `+` Debug packets. Lazily allocated by
+    /// [`SoupConnection::debug_packets`]; until the user subscribes,
+    /// `Debug` packets are consumed and dropped.
+    debug_tx: Option<mpsc::Sender<Vec<u8>>>,
+    /// Per-call timeout applied to [`SoupConnection::send_unsequenced`].
+    send_timeout: Duration,
 }
 
 impl<S> SoupConnection<S>
@@ -127,79 +158,84 @@ where
     /// Receive the next ITCH message from the server's sequenced-data
     /// flow.
     ///
-    /// Returns:
-    /// - `Some(Ok(msg))` — a valid sequenced-data payload decoded into
-    ///   an [`itch_protocol::Message`]; the internal sequence counter
-    ///   has been incremented past it.
-    /// - `Some(Err(SoupError::SessionEnded))` — server sent `Z`. The
-    ///   socket is still open at this point but the session is over.
-    /// - `Some(Err(SoupError::Protocol(_)))` — the inner ITCH payload
-    ///   failed to decode. Per the codec's stream-poison-resistance
-    ///   contract the underlying socket is still usable for the next
-    ///   packet.
-    /// - `Some(Err(SoupError::Io(_)))` — a transport-level failure;
-    ///   the caller should treat the connection as dead.
-    /// - `Some(Err(SoupError::UnexpectedHandshakePacket { tag }))` —
-    ///   server sent another `A` or `J` outside the handshake.
-    /// - `None` — peer closed the socket cleanly with no further
-    ///   packets.
-    ///
-    /// `Debug` packets (`+`) and heartbeats (`H` / `R`) are filtered
-    /// out and the call yields the next data event. (Heartbeat-driven
-    /// liveness checks belong to the heartbeat scheduler.)
+    /// Thin async wrapper around the [`Stream`] impl — see the
+    /// `impl Stream` block on `SoupConnection` for the complete
+    /// filtering rules. Kept for backwards compatibility with the
+    /// pre-`Stream` shape; new code should prefer the `Stream` API.
     pub async fn next_message(&mut self) -> Option<Result<Message, SoupError>> {
-        loop {
-            let packet = match self.framed.next().await? {
-                Ok(p) => p,
-                Err(e) => return Some(Err(e)),
-            };
-            match packet {
-                SoupPacket::SequencedData(payload) => {
-                    return Some(self.deliver_sequenced(&payload));
-                }
-                SoupPacket::EndOfSession => {
-                    return Some(Err(SoupError::SessionEnded));
-                }
-                SoupPacket::ServerHeartbeat | SoupPacket::Debug(_) => {
-                    // Heartbeats and Debug packets are filtered: not
-                    // every consumer cares. The heartbeat scheduler
-                    // (separate issue) tracks liveness via the
-                    // underlying read half.
-                    continue;
-                }
-                SoupPacket::LoginAccepted(_) | SoupPacket::LoginRejected(_) => {
-                    // Spec violation: server only sends these during
-                    // handshake. Surface and let the caller drop the
-                    // connection.
-                    return Some(Err(SoupError::UnexpectedHandshakePacket {
-                        tag: packet.tag(),
-                    }));
-                }
-                SoupPacket::LoginRequest(_)
-                | SoupPacket::UnsequencedData(_)
-                | SoupPacket::ClientHeartbeat
-                | SoupPacket::LogoutRequest => {
-                    // Client-only packet seen on the read half — buggy
-                    // peer. Same handling as above.
-                    return Some(Err(SoupError::UnexpectedHandshakePacket {
-                        tag: packet.tag(),
-                    }));
-                }
-            }
-        }
+        // Delegate to the `Stream` impl so the two surfaces stay in
+        // lock-step — every filter rule (heartbeat suppression,
+        // Debug-packet routing, EOS bookkeeping) lives in one place.
+        StreamExt::next(self).await
+    }
+
+    /// Override the default per-call send timeout
+    /// ([`DEFAULT_SEND_TIMEOUT`]). The connection retains the new
+    /// timeout for the rest of its lifetime.
+    #[must_use]
+    #[inline]
+    pub fn with_send_timeout(mut self, timeout: Duration) -> Self {
+        self.send_timeout = timeout;
+        self
+    }
+
+    /// Subscribe to incoming `+` Debug packets.
+    ///
+    /// Lazy: the channel is only allocated on the first call. A
+    /// second call returns a fresh receiver (and disconnects the
+    /// previous one — only one subscriber at a time). Packets that
+    /// arrive while the channel is full are dropped silently and
+    /// counted via `tracing::debug!`.
+    #[must_use]
+    pub fn debug_packets(&mut self) -> mpsc::Receiver<Vec<u8>> {
+        let (tx, rx) = mpsc::channel(DEBUG_CHANNEL_CAPACITY);
+        self.debug_tx = Some(tx);
+        rx
     }
 
     /// Send an unsequenced ITCH message to the server (`U` packet).
     ///
+    /// Honours the configured send timeout (default
+    /// [`DEFAULT_SEND_TIMEOUT`]); a writer that cannot drain the
+    /// packet within the deadline returns
+    /// `SoupError::Io(io::ErrorKind::WouldBlock)` rather than blocking
+    /// forever.
+    ///
     /// # Errors
     ///
     /// - [`SoupError::Protocol`] if the message fails to encode.
-    /// - [`SoupError::Io`] if the underlying socket write fails.
+    /// - [`SoupError::Io`] if the underlying socket write fails or
+    ///   the send timeout elapses (kind: `WouldBlock`).
+    #[inline]
     pub async fn send(&mut self, msg: Message) -> Result<(), SoupError> {
+        self.send_unsequenced(msg).await
+    }
+
+    /// Canonical-name variant of [`SoupConnection::send`]. See
+    /// `docs/TRANSPORT-SPEC.md` §3.4.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`SoupConnection::send`].
+    pub async fn send_unsequenced(&mut self, msg: Message) -> Result<(), SoupError> {
         let mut buf = vec![0u8; msg.encoded_len()];
         let n = msg.encode(&mut buf)?;
         debug_assert_eq!(n, buf.len());
-        self.framed.send(SoupPacket::UnsequencedData(buf)).await
+        match tokio::time::timeout(
+            self.send_timeout,
+            self.framed.send(SoupPacket::UnsequencedData(buf)),
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(_) => Err(SoupError::Io(std::io::Error::new(
+                std::io::ErrorKind::WouldBlock,
+                format!(
+                    "send_unsequenced did not complete within {:?}",
+                    self.send_timeout
+                ),
+            ))),
+        }
     }
 
     /// Issue a graceful `O LogoutRequest` and consume `self`.
@@ -228,6 +264,110 @@ where
         // for the reconnect loop.
         self.expected_sequence = self.expected_sequence.saturating_add(1);
         Ok(msg)
+    }
+}
+
+/// `Stream<Item = Result<Message, SoupError>>` — poll-based access
+/// to the same data that [`SoupConnection::next_message`] exposes.
+///
+/// Filter rules (mirror the `next_message` async method):
+///
+/// - `S` (Sequenced Data): decoded into a `Message`, sequence
+///   counter advances **on success only**.
+/// - `H` (server heartbeat): consumed silently; stream re-polls.
+/// - `+` (Debug): routed to the lazy
+///   [`SoupConnection::debug_packets`] receiver if subscribed,
+///   otherwise dropped silently; stream re-polls.
+/// - `Z` (EndOfSession): emitted **once** as
+///   `Some(Err(SoupError::SessionEnded))`; subsequent polls return
+///   `Ready(None)`.
+/// - Stray `A`/`J` (server-side handshake packets outside the
+///   handshake): emitted as
+///   `Some(Err(SoupError::UnexpectedHandshakePacket { tag }))`.
+/// - Client-direction packet (`L`, `U`, `R`, `O`) on a server
+///   stream: emitted as
+///   `Some(Err(SoupError::SoupFraming { reason }))`.
+///
+/// Bad inner-frame `Protocol(_)` errors **do not** advance the
+/// sequence counter — this is what lets a reconnect cleanly resume
+/// from `next_expected_sequence()`.
+impl<S> Stream for SoupConnection<S>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    type Item = Result<Message, SoupError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        // SAFETY-NOTE: only the inner `framed` is moved out via
+        // `Pin::new`; the rest of the struct is moved through `&mut`
+        // shared via `Pin::get_mut`. `S: Unpin` so this is sound
+        // without a `pin_project!`.
+        let this = self.get_mut();
+        if this.session_ended {
+            return Poll::Ready(None);
+        }
+        loop {
+            let packet = match Pin::new(&mut this.framed).poll_next(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(None) => return Poll::Ready(None),
+                Poll::Ready(Some(Err(e))) => return Poll::Ready(Some(Err(e))),
+                Poll::Ready(Some(Ok(p))) => p,
+            };
+            match packet {
+                SoupPacket::SequencedData(payload) => {
+                    match this.deliver_sequenced(&payload) {
+                        Ok(msg) => {
+                            tracing::debug!(seq = this.expected_sequence, "decoded sequenced-data");
+                            return Poll::Ready(Some(Ok(msg)));
+                        }
+                        Err(err) => {
+                            tracing::warn!(?err, "bad inner ITCH frame in sequenced data");
+                            return Poll::Ready(Some(Err(err)));
+                        }
+                    }
+                }
+                SoupPacket::EndOfSession => {
+                    this.session_ended = true;
+                    tracing::info!(session = %this.session, "soup session ended (Z)");
+                    return Poll::Ready(Some(Err(SoupError::SessionEnded)));
+                }
+                SoupPacket::ServerHeartbeat => {
+                    tracing::debug!("server heartbeat (filtered)");
+                    continue;
+                }
+                SoupPacket::Debug(payload) => {
+                    if let Some(tx) = this.debug_tx.as_ref() {
+                        match tx.try_send(payload) {
+                            Ok(()) => {}
+                            Err(mpsc::error::TrySendError::Full(_)) => {
+                                tracing::debug!("debug channel full; dropping packet");
+                            }
+                            Err(mpsc::error::TrySendError::Closed(_)) => {
+                                this.debug_tx = None;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                SoupPacket::LoginAccepted(_) | SoupPacket::LoginRejected(_) => {
+                    // Server-only packet outside the handshake — buggy
+                    // peer.
+                    let tag = packet.tag();
+                    return Poll::Ready(Some(Err(SoupError::UnexpectedHandshakePacket { tag })));
+                }
+                SoupPacket::LoginRequest(_)
+                | SoupPacket::UnsequencedData(_)
+                | SoupPacket::ClientHeartbeat
+                | SoupPacket::LogoutRequest => {
+                    // Client-direction packet on a server stream — typed
+                    // framing violation per `docs/TRANSPORT-SPEC.md`
+                    // §3.4.
+                    return Poll::Ready(Some(Err(SoupError::SoupFraming {
+                        reason: "client-direction packet on a server stream",
+                    })));
+                }
+            }
+        }
     }
 }
 
@@ -335,6 +475,9 @@ where
                     framed,
                     session,
                     expected_sequence: sequence,
+                    session_ended: false,
+                    debug_tx: None,
+                    send_timeout: DEFAULT_SEND_TIMEOUT,
                 });
             }
             Some(Ok(SoupPacket::LoginRejected(reason))) => {
@@ -796,5 +939,250 @@ mod tests {
         // length=47, tag='L', then 6+10+10+20 ASCII bytes.
         assert_eq!(buf[0..2], [0x00, 0x2F]);
         assert_eq!(buf[2], b'L');
+    }
+
+    // -----------------------------------------------------------
+    // #16 — Stream<Message> + send_unsequenced specific tests.
+    // -----------------------------------------------------------
+
+    /// Encode a `Message` exactly as the wire `S` packet would carry
+    /// it (1 tag byte + body), so the server-side test can stuff it
+    /// into a `SequencedData` payload directly.
+    fn message_payload(msg: &Message) -> Vec<u8> {
+        let mut buf = vec![0u8; msg.encoded_len()];
+        let n = msg.encode(&mut buf).expect("encode");
+        debug_assert_eq!(n, buf.len());
+        buf
+    }
+
+    #[tokio::test]
+    async fn test_stream_yields_sequenced_messages_in_order_and_advances_counter() {
+        let (client, server) = pair();
+        let mut server = server_framed(server);
+
+        let server_task = tokio::spawn(async move {
+            let _ = server.next().await.expect("req").expect("ok");
+            server
+                .send(SoupPacket::LoginAccepted(LoginAccepted {
+                    session: "STREAM".into(),
+                    sequence: 100,
+                }))
+                .await
+                .expect("send accepted");
+            for _ in 0..3 {
+                let payload = message_payload(&sample_message());
+                server
+                    .send(SoupPacket::SequencedData(payload))
+                    .await
+                    .expect("send S");
+            }
+            // Send Z so the stream terminates cleanly.
+            server.send(SoupPacket::EndOfSession).await.expect("send Z");
+            // Yield until the client closes.
+            let _ = server.next().await;
+        });
+
+        let mut conn = login(client, creds(), "", 0).await.expect("login");
+        assert_eq!(conn.next_expected_sequence(), 100);
+
+        let mut got = 0u32;
+        while let Some(item) = conn.next().await {
+            match item {
+                Ok(_msg) => got += 1,
+                Err(SoupError::SessionEnded) => break,
+                Err(other) => panic!("unexpected error: {other:?}"),
+            }
+        }
+        assert_eq!(got, 3);
+        assert_eq!(conn.next_expected_sequence(), 103);
+
+        // Stream terminates after SessionEnded.
+        assert!(conn.next().await.is_none());
+
+        // Drop conn so the server's lingering read returns None.
+        drop(conn);
+        server_task.await.expect("join");
+    }
+
+    #[tokio::test]
+    async fn test_stream_bad_inner_frame_does_not_advance_counter_or_poison() {
+        let (client, server) = pair();
+        let mut server = server_framed(server);
+
+        let server_task = tokio::spawn(async move {
+            let _ = server.next().await.expect("req").expect("ok");
+            server
+                .send(SoupPacket::LoginAccepted(LoginAccepted {
+                    session: "BAD".into(),
+                    sequence: 50,
+                }))
+                .await
+                .expect("send accepted");
+            // 1) Garbage payload (single byte that decodes as an
+            //    unknown ITCH tag).
+            server
+                .send(SoupPacket::SequencedData(vec![b'?']))
+                .await
+                .expect("send bad");
+            // 2) Good payload immediately after.
+            server
+                .send(SoupPacket::SequencedData(message_payload(&sample_message())))
+                .await
+                .expect("send good");
+            server.send(SoupPacket::EndOfSession).await.expect("send Z");
+            let _ = server.next().await;
+        });
+
+        let mut conn = login(client, creds(), "", 0).await.expect("login");
+        let initial_seq = conn.next_expected_sequence();
+        assert_eq!(initial_seq, 50);
+
+        // First poll: protocol error from the bad payload, counter
+        // does NOT move.
+        match conn.next().await {
+            Some(Err(SoupError::Protocol(_))) => {}
+            other => panic!("expected Protocol error, got {other:?}"),
+        }
+        assert_eq!(conn.next_expected_sequence(), initial_seq);
+
+        // Second poll: good message decodes, counter advances by 1.
+        match conn.next().await {
+            Some(Ok(_)) => {}
+            other => panic!("expected Ok(msg), got {other:?}"),
+        }
+        assert_eq!(conn.next_expected_sequence(), initial_seq + 1);
+
+        // Third poll: SessionEnded.
+        match conn.next().await {
+            Some(Err(SoupError::SessionEnded)) => {}
+            other => panic!("expected SessionEnded, got {other:?}"),
+        }
+        assert!(conn.next().await.is_none());
+
+        // Drop the client side so the server's lingering read returns
+        // None and the spawned task can join.
+        drop(conn);
+        server_task.await.expect("join");
+    }
+
+    #[tokio::test]
+    async fn test_stream_filters_heartbeats_and_debug_silently() {
+        let (client, server) = pair();
+        let mut server = server_framed(server);
+
+        let server_task = tokio::spawn(async move {
+            let _ = server.next().await.expect("req").expect("ok");
+            server
+                .send(SoupPacket::LoginAccepted(LoginAccepted {
+                    session: "FILTER".into(),
+                    sequence: 1,
+                }))
+                .await
+                .expect("send accepted");
+            // Pepper the stream with H/+/H around two real S packets.
+            server
+                .send(SoupPacket::ServerHeartbeat)
+                .await
+                .expect("h1");
+            server
+                .send(SoupPacket::SequencedData(message_payload(&sample_message())))
+                .await
+                .expect("s1");
+            server
+                .send(SoupPacket::Debug(b"info".to_vec()))
+                .await
+                .expect("d");
+            server
+                .send(SoupPacket::ServerHeartbeat)
+                .await
+                .expect("h2");
+            server
+                .send(SoupPacket::SequencedData(message_payload(&sample_message())))
+                .await
+                .expect("s2");
+            server.send(SoupPacket::EndOfSession).await.expect("z");
+            let _ = server.next().await;
+        });
+
+        let mut conn = login(client, creds(), "", 0).await.expect("login");
+        let m1 = conn.next().await.expect("m1").expect("ok");
+        let m2 = conn.next().await.expect("m2").expect("ok");
+        assert_eq!(format!("{m1:?}"), format!("{:?}", sample_message()));
+        assert_eq!(format!("{m2:?}"), format!("{:?}", sample_message()));
+        match conn.next().await {
+            Some(Err(SoupError::SessionEnded)) => {}
+            other => panic!("expected SessionEnded, got {other:?}"),
+        }
+        assert!(conn.next().await.is_none());
+
+        drop(conn);
+        server_task.await.expect("join");
+    }
+
+    #[tokio::test]
+    async fn test_stream_client_direction_packet_yields_soup_framing_error() {
+        // Server (buggy) sends a `R ClientHeartbeat` — that's a
+        // client → server packet — on the read half. Per
+        // `docs/TRANSPORT-SPEC.md` §3.4 we surface `SoupFraming`.
+        let (client, server) = pair();
+        let mut server = server_framed(server);
+
+        let server_task = tokio::spawn(async move {
+            let _ = server.next().await.expect("req").expect("ok");
+            server
+                .send(SoupPacket::LoginAccepted(LoginAccepted {
+                    session: "BUGGY".into(),
+                    sequence: 1,
+                }))
+                .await
+                .expect("send accepted");
+            server
+                .send(SoupPacket::ClientHeartbeat)
+                .await
+                .expect("send R");
+        });
+
+        let mut conn = login(client, creds(), "", 0).await.expect("login");
+        match conn.next().await {
+            Some(Err(SoupError::SoupFraming { reason })) => {
+                assert!(reason.contains("client-direction"));
+            }
+            other => panic!("expected SoupFraming, got {other:?}"),
+        }
+        server_task.await.expect("join");
+    }
+
+    #[tokio::test]
+    async fn test_send_unsequenced_writes_a_u_packet() {
+        let (client, server) = pair();
+        let mut server = server_framed(server);
+
+        let server_task = tokio::spawn(async move {
+            // 1) Login.
+            let _ = server.next().await.expect("req").expect("ok");
+            server
+                .send(SoupPacket::LoginAccepted(LoginAccepted {
+                    session: "U".into(),
+                    sequence: 0,
+                }))
+                .await
+                .expect("send accepted");
+            // 2) Expect one U packet from client.
+            let pkt = server.next().await.expect("u").expect("ok");
+            match pkt {
+                SoupPacket::UnsequencedData(payload) => {
+                    let m = Message::decode(&payload).expect("decode");
+                    assert_eq!(format!("{m:?}"), format!("{:?}", sample_message()));
+                }
+                other => panic!("expected UnsequencedData, got {other:?}"),
+            }
+        });
+
+        let mut conn = login(client, creds(), "", 0).await.expect("login");
+        conn.send_unsequenced(sample_message())
+            .await
+            .expect("send_unsequenced");
+        drop(conn);
+        server_task.await.expect("join");
     }
 }
