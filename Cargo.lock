@@ -528,6 +528,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "itch-conformance"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "itch-mold",
+ "itch-protocol",
+ "itch-soup",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "itch-mold"
 version = "0.1.0"
 dependencies = [
