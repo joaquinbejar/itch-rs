@@ -6,6 +6,24 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+### Added
+
+- `--transport tcp|soup|mold` flag (default `tcp`) — runtime
+  dispatch across sibling transport crates per ADR-0008. `tcp`
+  uses `itch_tcp::connect`; `soup` uses
+  `itch_soup::ResilientSoupClient` (auto-reconnect + sequence
+  resume per ADR-0009); `mold` is a stub returning exit code 1
+  until `MoldStream` lands (issue #21).
+- `--server ADDR` flag (defaults to `127.0.0.1:9100`, fallback
+  to `ITCH_SERVER` env var for backward compat).
+- `--soup-username` / `--soup-password` flags for the
+  SoupBinTCP `Login Request` (only consulted when
+  `--transport soup`).
+- `clap` CLI parser; `itch-soup` and `itch-mold` hard
+  dependencies (runtime dispatch, no `#[cfg(feature)]`).
+- Unit tests for transport-flag parsing and the mold-not-available
+  exit code.
+
 ## 0.1.0 — 2026-05-05
 
 ### Added

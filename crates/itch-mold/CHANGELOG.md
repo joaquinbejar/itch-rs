@@ -115,6 +115,6 @@ and this project adheres to per-crate
 - `#![forbid(unsafe_code)]` on every module.
 - Crate is registered in the workspace and exposes a `MoldResult<T>`
   alias for ergonomic `?` propagation.
-- Receiver (`MoldStream`), gap recovery, request server, publisher,
-  and integration tests land in issues #21–#26 (with #21 in this
-  release).
+- Receiver, bounded buffer, request server (#21–#23) in this
+  release; gap-recovery client, publisher, integration tests
+  land in #24–#26.
