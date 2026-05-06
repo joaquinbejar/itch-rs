@@ -45,8 +45,14 @@ jobs:
                   fuzz/corpus/${{ matrix.target }}/ 2>/dev/null || true
           fi
       - name: Run ${{ matrix.target }} (60 s)
+        # Use `+nightly` explicitly so the repo-root rust-toolchain.toml
+        # (pinned to stable) does not override the toolchain installed
+        # by `dtolnay/rust-toolchain@nightly` above. cargo-fuzz needs
+        # nightly for the `-Z sanitizer` flags it injects.
+        env:
+          RUSTUP_TOOLCHAIN: nightly
         run: |
-          cargo fuzz run \
+          cargo +nightly fuzz run \
             --fuzz-dir fuzz \
             ${{ matrix.target }} \
             -- -max_total_time=60
