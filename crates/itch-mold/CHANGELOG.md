@@ -109,6 +109,30 @@ and this project adheres to per-crate
   hole-stop in the cache, status decision, end-to-end TCP
   request/response, hole + EOS responses, multi-request reuse,
   and the empty-request edge case.
+- **`GapRecoveryClient` (issue #24).** Wraps a `MoldStream` with
+  a `RequestClient` pool that automatically issues retransmission
+  requests when the receiver observes a gap. Output is the same
+  `Stream<Item = Result<MoldEvent, MoldError>>` shape — `Gap`
+  events still surface for observability but consecutive
+  `Message`s flow as if no loss had occurred. Configuration
+  (`GapRecoveryConfig`):
+  - `request_servers: Vec<SocketAddr>` — ordered failover list.
+  - `request_timeout` (5 s default) caps each TCP round trip.
+  - `gap_timeout` (60 s default) is the total wall-clock budget
+    per gap; on expiry the client surfaces a typed
+    `MoldError::RequestTimeout` and the receiver advances past
+    the gap.
+  - `backoff_min` / `backoff_max` (50 ms / 2 s) for retries
+    against a single server.
+  - `max_retries_per_server` (3) before failing over.
+  - Recovery runs on a per-gap `tokio::spawn`'d task; the
+    multicast read loop is never blocked. Recovered frames are
+    fed back into the receiver via `MoldStream::ingest_retransmit`
+    and surface in the natural in-order delivery path.
+- 3 unit tests cover the happy path (gap filled via request
+  server), all-servers-fail (gives up with typed error, stream
+  not poisoned), and failover from a dead first server to a
+  healthy second.
 
 ### Notes
 
