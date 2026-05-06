@@ -178,28 +178,31 @@ async fn login_rejected_session_unavailable() {
 async fn server_kills_socket_mid_session_surfaces_error() {
     let (addr, src_tx, server_task) = spin_server(8).await;
     let mut conn = login_once(addr, "alice", "secret").await;
+    // Give the server time to attach the subscriber to the
+    // broadcast channel before publishing.
+    tokio::time::sleep(Duration::from_millis(50)).await;
     src_tx.send(sample_message_at(1)).await.expect("push");
     // Read the one message.
     let m = conn.next().await.expect("some").expect("ok");
     assert!(matches!(m, Message::SystemEvent(_)));
-    // Abruptly abort the server — client must surface an error or
-    // SessionEnded.
+    // Abruptly close the source — the server's per-subscriber tasks
+    // see the broadcast end and shut down, the TCP socket closes,
+    // the client surfaces an error or `None`. Mirrors a server-side
+    // mid-session abort from the client's point of view.
+    drop(src_tx);
     server_task.abort();
     let _ = server_task.await;
-    // Drain remaining items; we expect either Err(_) or None.
-    let mut saw_signal = false;
-    for _ in 0..10 {
-        match tokio::time::timeout(Duration::from_secs(1), conn.next()).await {
-            Ok(Some(Err(_))) | Ok(None) => {
-                saw_signal = true;
-                break;
+    let saw_signal = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match conn.next().await {
+                Some(Err(_)) | None => return true,
+                Some(Ok(_)) => continue,
             }
-            Ok(Some(Ok(_))) => continue,
-            Err(_timeout) => break,
         }
-    }
+    })
+    .await
+    .unwrap_or(false);
     assert!(saw_signal, "client must surface a disconnect signal");
-    drop(src_tx);
 }
 
 #[tokio::test]
@@ -262,12 +265,25 @@ async fn resilient_client_recovers_across_disconnect() {
         .with_backoff(Duration::from_millis(5), Duration::from_millis(20));
     let mut client = ResilientSoupClient::new(cfg);
 
+    // Force the lazy connect by pulling once on the client side
+    // before publishing — guarantees the subscriber is attached to
+    // the broadcast before the source produces messages.
+    let first_msg = tokio::spawn(async move {
+        let item = client.next_message().await;
+        (client, item)
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
     for ts in 0..4u64 {
         src_tx.send(sample_message_at(ts)).await.expect("push");
     }
     drop(src_tx);
 
+    let (mut client, first) = first_msg.await.expect("join");
     let mut got = 0u32;
+    if let Some(Ok(_)) = first {
+        got += 1;
+    }
     while let Some(item) = client.next_message().await {
         match item {
             Ok(_) => got += 1,
