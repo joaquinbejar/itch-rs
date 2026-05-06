@@ -53,7 +53,7 @@
 //! # Transport drivers (feature-gated)
 //!
 //! The `soup` and `mold` features add async best-effort drivers
-//! ([`soup::drive_server`] and [`mold::drive_publisher`]) that walk a
+//! (`soup::drive_server` and `mold::drive_publisher`) that walk a
 //! third-party server / publisher through the documented session
 //! scenarios (login accept / reject, sequenced flow, heartbeat,
 //! reconnect, end of session, gap recovery, …). The drivers report
