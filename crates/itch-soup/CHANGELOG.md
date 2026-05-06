@@ -8,6 +8,14 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Criterion bench `soup_codec`** (issue #31): per-packet
+  encode + decode plus back-to-back streaming decode of all 10
+  packet kinds. Run with
+  `cargo bench -p itch-soup --bench soup_codec`. Covers the spec-
+  fixed `LoginRequest` (46 B) / `LoginAccepted` (33 B) variants
+  plus the variable-payload `SequencedData` / `UnsequencedData` /
+  `Debug`. Live-server / `bench-hdr` p99/p99.9 variants deferred
+  (see `BENCH.md`).
 - **`SoupServer`** (issue #18). Server-side SoupBinTCP publisher
   generic over the three `itch-source` traits (`MessageSource`,
   `SeqStore`, `SubscriptionPolicy`) per ADR-0012.

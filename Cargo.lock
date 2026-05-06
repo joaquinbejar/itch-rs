@@ -532,6 +532,7 @@ name = "itch-mold"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "criterion",
  "futures",
  "itch-protocol",
  "itch-source",
@@ -573,6 +574,7 @@ name = "itch-soup"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "criterion",
  "futures",
  "itch-protocol",
  "itch-source",
