@@ -5,7 +5,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to per-crate
 [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 1.0.0 — 2026-05-06
+
+### Stability commitment
+
+From this version forward, the public API of `itch-mold` does not
+change without a major bump. See `API.md` at the workspace root.
 
 ### Added
 

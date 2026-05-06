@@ -7,7 +7,7 @@ license = "Apache-2.0"
 publish = true
 
 [dependencies]
-itch-protocol = { path = "../itch-protocol", version = "0.1" }
+itch-protocol = { path = "../itch-protocol", version = "1.0" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
