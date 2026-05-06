@@ -9,6 +9,12 @@ and this project adheres to per-crate
 
 ### Added
 
+- **Criterion bench `mold_codec`** (issue #31): encode + decode
+  for heartbeat (20 B header-only), end-of-session, single-block
+  (60 B = 20 header + 38 B body), and 10-block (420 B) packets.
+  Run with `cargo bench -p itch-mold --bench mold_codec`.
+  Multicast-loopback `MoldPublisher`↔`MoldStream` throughput +
+  `bench-hdr` p99/p99.9 variants deferred (see `BENCH.md`).
 - **MoldUDP64 V1.00 downstream packet codec** (`MoldPacket`,
   `MoldPacketHeader`, `MessageBlock`, plus constants `HEADER_LEN`,
   `MSG_COUNT_HEARTBEAT`, `MSG_COUNT_END_OF_SESSION`, `MAX_BLOCK_LEN`,

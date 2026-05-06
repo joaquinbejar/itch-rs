@@ -26,6 +26,7 @@ rand          = { version = "0.8", default-features = false, features = ["std", 
 tokio = { workspace = true, features = ["net", "rt", "macros", "time", "io-util", "test-util", "rt-multi-thread"] }
 itch-source = { workspace = true }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [features]
 default = []
@@ -34,3 +35,7 @@ default = []
 # public API. Run with:
 #   cargo test -p itch-soup --features integration --test integration
 integration = []
+
+[[bench]]
+name = "soup_codec"
+harness = false
