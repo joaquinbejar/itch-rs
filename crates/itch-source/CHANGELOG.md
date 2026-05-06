@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Pacing` enum + `paced(inner, pacing) -> PacedSource<S>`
+  combinator. Three modes per `docs/ITCH-SOURCE.md` §13:
+  - `Pacing::MaxSpeed` — yield as fast as the inner stream allows.
+  - `Pacing::Fixed { period }` — one message per `period`.
+  - `Pacing::Realtime` — sleep `t_{n+1} - t_n` between successive
+    `Message::header().timestamp` values; first message yields
+    immediately; out-of-order timestamps yield without delay.
+  Backed by `tokio::time::sleep`. Works on any
+  `MessageSource` (`IteratorSource`, `ChannelSource`, future
+  `FileReplaySource`, …) without re-implementing the sleep logic.
+  Full `.itch` `FileReplaySource` lands with `itch-replay` in
+  v0.5 (issue #32).
 - `examples/matching_engine_publisher.rs` — runnable end-to-end
   example wiring all three traits together: a tokio task simulates
   a matching engine emitting `AddOrder` / `OrderExecuted` /
