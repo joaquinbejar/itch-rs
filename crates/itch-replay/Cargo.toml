@@ -1,0 +1,22 @@
+[package]
+name = "itch-replay"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = true
+
+[dependencies]
+itch-protocol = { path = "../itch-protocol", version = "0.1" }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+tokio = { workspace = true, features = ["fs", "io-util"], optional = true }
+bytes = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+
+[features]
+default = []
+tokio = ["dep:tokio", "dep:bytes", "dep:futures"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

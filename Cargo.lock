@@ -554,6 +554,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "itch-replay"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "futures",
+ "itch-protocol",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "itch-server"
 version = "0.1.0"
 dependencies = [
