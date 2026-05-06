@@ -6,6 +6,25 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+### Added
+
+- **Property-based tests** (`tests/property.rs` + shared
+  `tests/common/mod.rs` strategies). 39 invariants across 11
+  named categories per `docs/TESTING.md` §3:
+  `encode_decode_identity`, `decode_encode_identity`,
+  `decode_no_panic` (random-bytes ≤ 2 KiB), `stock_roundtrip`,
+  `mpid_roundtrip`, `price4_lossless_integer`,
+  `price8_lossless_integer`, `header_roundtrip`,
+  `truncation_returns_error`, `<enum>_byte_roundtrip` (one per of
+  the 18 closed-set ASCII enums), `<enum>_unknown_byte_errors`
+  (negative cases via `prop_filter`).
+- `proptest = "1"` as a dev-dependency; default 1024 cases per
+  invariant, 50 000 shrink-iter cap. Verified with a 5 000-case
+  sweep before the first push.
+- Exhaustive `any_message()` strategy — one `prop_oneof!` branch
+  per ITCH 5.0 message kind so a future variant fails to compile
+  here too, mirroring the `Message::decode` exhaustiveness rule.
+
 ## 0.1.0 — 2026-05-05
 
 ### Added
