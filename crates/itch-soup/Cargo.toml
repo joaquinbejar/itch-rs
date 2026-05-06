@@ -20,4 +20,16 @@ futures       = { workspace = true }
 tracing       = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["net", "rt", "macros", "time", "io-util", "test-util"] }
+tokio = { workspace = true, features = ["net", "rt", "macros", "time", "io-util", "test-util", "rt-multi-thread"] }
+itch-source = { workspace = true }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+
+# The end-to-end `tests/integration.rs` target depends on
+# `SoupServer` (issue #18) and `ResilientSoupClient` (issue #17).
+# Until those PRs are merged on `main` the test target is gated
+# out via a custom cfg flag (NOT a feature, so `--all-features`
+# stays clean). Run after merge with:
+#
+#   RUSTFLAGS="--cfg soup_integration_tests" cargo test -p itch-soup --test integration
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(soup_integration_tests)"] }

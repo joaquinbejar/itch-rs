@@ -8,6 +8,43 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **End-to-end integration tests** (`tests/integration.rs`,
+  issue #19). Drives a real `SoupServer` from a real
+  `SoupConnection` / `ResilientSoupClient` through every
+  documented exchange:
+  - happy-path: 1000 sequenced messages in monotone order;
+  - login rejection: bad password → `NotAuthorized`;
+  - session-id mismatch → `SessionUnavailable`;
+  - server-killed mid-session → typed disconnect surfaces;
+  - reconnect-with-resume via base `SoupConnection` (manual);
+  - `ResilientSoupClient` recovers across socket drops;
+  - 2 concurrent clients receive the same fan-out;
+  - `logout()` closes cleanly;
+  - graceful EOS on source exhaustion;
+  - heartbeat packets filtered from the client's stream.
+  Gated behind `--cfg soup_integration_tests` so
+  `cargo clippy --all-features` stays clean while #17 and
+  #18 are still in-flight. Run after merging the two
+  prerequisite PRs:
+
+  ```bash
+  RUSTFLAGS="--cfg soup_integration_tests" \
+      cargo test -p itch-soup --test integration
+  ```
+
+### Documented
+
+- `[lints.rust]` `check-cfg` for the new `soup_integration_tests`
+  custom cfg flag so unguarded usages surface as compiler
+  warnings.
+
+### Changed
+
+- New dev-deps: `itch-source` (used by integration helpers),
+  `tracing-subscriber` (test-only; set up via
+  `tracing_subscriber::fmt::TestWriter` per
+  `docs/TESTING.md`).
+
 - **Login state machine** (`SoupConnection`, `login`,
   `login_with_timeout`, `SoupCredentials`,
   `DEFAULT_LOGIN_TIMEOUT`). Performs the

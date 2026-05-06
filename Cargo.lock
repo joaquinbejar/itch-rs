@@ -280,10 +280,12 @@ dependencies = [
  "bytes",
  "futures",
  "itch-protocol",
+ "itch-source",
  "thiserror",
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
