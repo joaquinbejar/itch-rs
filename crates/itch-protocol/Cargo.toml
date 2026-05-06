@@ -17,3 +17,6 @@ thiserror = { workspace = true }
 # alongside `ProtocolError` in issue #6, where it actually gates
 # `std::error::Error` plumbing. Adding it here as a stub would expose
 # an inert flag in the public surface, so it stays absent until then.
+
+[dev-dependencies]
+proptest = "1"
