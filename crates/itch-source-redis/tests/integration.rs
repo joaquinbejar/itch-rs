@@ -45,17 +45,28 @@ fn unique_prefix(suffix: &str) -> String {
 }
 
 async fn try_connect(prefix: &str, ttl: Duration) -> Option<RedisSeqStore> {
-    let url = std::env::var(REDIS_ENV).unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+    // CI default — no Redis: skip the test cleanly.
+    if std::env::var(REDIS_ENV).is_err() {
+        eprintln!("skipping: ITCH_REDIS_URL not set");
+        return None;
+    }
+    let url = std::env::var(REDIS_ENV).expect("ITCH_REDIS_URL just checked");
     let cfg = RedisSeqStoreConfig {
         url,
         key_prefix: prefix.to_string(),
         ttl,
         max_connections: 4,
     };
-    match RedisSeqStore::connect(cfg).await {
-        Ok(store) => Some(store),
-        Err(err) => {
+    // Bound the connect attempt so a misconfigured / unreachable
+    // peer surfaces as a clean skip rather than a hang.
+    match tokio::time::timeout(Duration::from_secs(2), RedisSeqStore::connect(cfg)).await {
+        Ok(Ok(store)) => Some(store),
+        Ok(Err(err)) => {
             eprintln!("skipping: Redis unavailable ({err})");
+            None
+        }
+        Err(_elapsed) => {
+            eprintln!("skipping: Redis connect timed out after 2s");
             None
         }
     }
