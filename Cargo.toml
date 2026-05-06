@@ -10,6 +10,7 @@ members = [
     "crates/itch-server",
     "crates/itch-client",
     "crates/itch-conformance",
+    "crates/itch-book",
     "crates/itch-rs",
 ]
 
@@ -38,6 +39,7 @@ itch-soup        = { path = "crates/itch-soup",        version = "0.1.0" }
 itch-mold        = { path = "crates/itch-mold",        version = "0.1.0" }
 itch-source      = { path = "crates/itch-source",      version = "0.1.0" }
 itch-conformance = { path = "crates/itch-conformance", version = "0.1.0" }
+itch-book        = { path = "crates/itch-book",        version = "0.1.0" }
 
 [profile.release]
 lto           = "thin"
