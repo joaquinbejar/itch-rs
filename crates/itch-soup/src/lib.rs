@@ -54,10 +54,17 @@ use tokio_util::codec::{Decoder, Encoder};
 mod connection;
 pub use connection::{
     login, login_with_timeout, SoupConnection, SoupCredentials, DEFAULT_LOGIN_TIMEOUT,
+    DEFAULT_SEND_TIMEOUT,
 };
 
 mod heartbeat;
 pub use heartbeat::{HeartbeatConfig, InboundHeartbeat, OutboundHeartbeat};
+
+mod resilient;
+pub use resilient::{
+    ResilientSoupClient, ResilientSoupConfig, DEFAULT_BACKOFF_MAX, DEFAULT_BACKOFF_MIN,
+    DEFAULT_RESILIENT_LOGIN_TIMEOUT,
+};
 
 mod server;
 pub use server::{
@@ -204,6 +211,18 @@ pub enum SoupError {
     /// handshake exchange.
     #[error("login timed out after {0:?}")]
     LoginTimeout(std::time::Duration),
+
+    /// SoupBinTCP framing-layer violation that does not warrant a
+    /// more specific variant — for example a client-direction
+    /// packet (`L` / `U` / `R` / `O`) seen on a server-bound stream
+    /// or a subscriber that lagged past the broadcast capacity.
+    /// Carries a static `reason` string so callers can pattern-match
+    /// without parsing.
+    #[error("soup framing violation: {reason}")]
+    SoupFraming {
+        /// Static description of the violation.
+        reason: &'static str,
+    },
 }
 
 /// Codes carried by a Login Rejected (`J`) packet.

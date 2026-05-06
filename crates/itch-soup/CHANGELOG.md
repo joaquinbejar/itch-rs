@@ -70,6 +70,70 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
   to avoid wall-clock flakiness. Primitives can be integrated into
   `SoupConnection` via a future `login_with_heartbeat()` variant or
   used standalone.
+- **`ResilientSoupClient` + `ResilientSoupConfig`** (issue #17,
+  ADR-0009 resilience layer). Wraps `SoupConnection` with auto-
+  reconnect, sequence resume, and exponential backoff with jitter
+  (per `docs/TRANSPORT-SPEC.md` §3.7,
+  `rules/global_rules.md`):
+  - Round-robin across `addrs: Vec<SocketAddr>` on each reconnect.
+  - Pinned `requested_session: Option<String>` carried unchanged
+    across reconnects; `initial_sequence: u64` honoured on the
+    first connect, `next_expected_sequence` from the live
+    connection on every subsequent reconnect.
+  - Exponential backoff with uniform jitter sampled from
+    `[backoff_min, min(backoff_max, backoff_min << attempt)]`
+    (default 100 ms → 30 s).
+  - `max_attempts: Option<u32>` retry budget; `None` retries
+    forever.
+  - `LoginRejected(_)` and `SessionMismatch { .. }` are fatal:
+    surfaced once then `next_message()` returns `None`.
+  - `Protocol(_)` errors are forwarded but do NOT trigger
+    reconnect — the inner `SoupConnection` resumes in place.
+  - Observability: `last_session()`, `next_expected_sequence()`.
+  - `into_stream() -> impl Stream<Item = Result<Message,
+    SoupError>> + Send + Unpin` adapter for combinator usage.
+  - 9 unit tests via in-process `tokio::net::TcpListener` mock
+    server: socket-drop resume, fatal `LoginRejected`,
+    `max_attempts` exhausted, multi-addr round-robin failover,
+    backoff-bounds invariant, initial-state observability,
+    `Send + Unpin` and `Arc<Mutex<_>>` compile checks,
+    `into_stream()` smoke.
+- New `rand = "0.8"` dependency, used **only** in `resilient.rs`
+  for backoff jitter (no other entry points). Approved by issue
+  #17 ticket text.
+- **`Stream<Item = Result<Message, SoupError>>` for `SoupConnection`**
+  (issue #16). `SoupConnection` now implements `futures::Stream`
+  directly; the existing `next_message()` method is a thin async
+  wrapper around it. Filter rules (per
+  `docs/TRANSPORT-SPEC.md` §3.4):
+  - `S` Sequenced Data → decoded into `itch_protocol::Message`;
+    `next_expected_sequence` advances **on success only** so a
+    failed inner ITCH decode doesn't desync reconnect.
+  - `H` Server Heartbeat → consumed silently; the heartbeat
+    scheduler tracks liveness on its own.
+  - `+` Debug → routed to a lazy
+    `SoupConnection::debug_packets() -> mpsc::Receiver<Vec<u8>>`
+    if subscribed, otherwise dropped silently. Bounded buffer
+    (16 packets) so the connection can never block waiting for
+    a slow debug consumer.
+  - `Z` End-of-Session → emitted **once** as
+    `Some(Err(SessionEnded))`; subsequent polls yield `None`.
+  - Stray `A` / `J` outside the handshake →
+    `Err(UnexpectedHandshakePacket { tag })`.
+  - Client-direction packet (`L` / `U` / `R` / `O`) on the read
+    half → typed `Err(SoupFraming { reason: "client-direction
+    packet on a server stream" })`.
+- **`SoupConnection::send_unsequenced(Message)`** (canonical name
+  for the existing `send` alias) wraps the outbound write in a
+  configurable timeout (`DEFAULT_SEND_TIMEOUT = 250 ms`,
+  overridable via `with_send_timeout`). A writer that cannot
+  drain within the budget returns
+  `Err(SoupError::Io(io::ErrorKind::WouldBlock))` rather than
+  blocking forever — honours `docs/TRANSPORT-SPEC.md` §7.1.
+- New `SoupError::SoupFraming { reason: &'static str }` variant
+  for spec-violation events that don't fit a more specific
+  variant (currently: client-direction packet on a server
+  stream; reserved for future broadcast-lag drops in `SoupServer`).
 - Four new structured `SoupError` variants:
   `SessionMismatch { requested, got }` (server's `LoginAccepted`
   returned a different session than an explicit non-empty request),

@@ -61,7 +61,7 @@ pub const DEFAULT_BROADCAST_CAPACITY: usize = 4_096;
 /// are dropped with a `tracing::warn!`.
 pub const DEFAULT_UNSEQUENCED_INBOX_CAPACITY: usize = 1_024;
 
-/// Default upper bound on shutdown grace — how long [`SoupServer::shutdown`]
+/// Default upper bound on shutdown grace — how long the server
 /// waits for in-flight per-connection tasks to flush `EndOfSession`
 /// before being aborted.
 pub const DEFAULT_SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
@@ -161,9 +161,10 @@ impl SoupSession {
 /// 5. `next_seq += 1`.
 ///
 /// Shutdown: dropping the [`SoupServer`] aborts the listener and
-/// the ingest task. The cooperative [`SoupServer::shutdown`] sends
+/// the ingest task. A cooperative shutdown path sends
 /// `Z EndOfSession` to every connected subscriber and waits up to
-/// the shutdown grace before tearing down.
+/// the shutdown grace ([`DEFAULT_SHUTDOWN_GRACE`]) before tearing
+/// down.
 pub struct SoupServer<S, St, P>
 where
     S: MessageSource + 'static,
