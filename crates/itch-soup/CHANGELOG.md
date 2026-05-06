@@ -28,6 +28,15 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
   message. Pass it back into `login`'s `requested_sequence` argument
   on reconnect. `SoupConnection::session()` exposes the negotiated
   session id for the same purpose.
+- **Heartbeat scheduler** (`HeartbeatConfig`, `OutboundHeartbeat`,
+  `InboundHeartbeat`): configurable 1 s outbound interval (resets on
+  real traffic) + 15 s dead-link timeout. `OutboundHeartbeat` sends
+  `H` (server) or `R` (client) automatically; `InboundHeartbeat`
+  detects peer silence and emits `SoupError::PeerSilent { since }`.
+  4 unit tests using `tokio::time::pause` + `tokio::time::advance`
+  to avoid wall-clock flakiness. Primitives can be integrated into
+  `SoupConnection` via a future `login_with_heartbeat()` variant or
+  used standalone.
 - Four new structured `SoupError` variants:
   `SessionMismatch { requested, got }` (server's `LoginAccepted`
   returned a different session than an explicit non-empty request),
