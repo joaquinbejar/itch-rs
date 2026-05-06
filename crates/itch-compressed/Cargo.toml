@@ -1,0 +1,30 @@
+[package]
+name        = "itch-compressed"
+description = "Compressed via SoupBinTCP — zstd-decompressed ITCH 5.0 over itch-soup"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+keywords.workspace     = true
+categories.workspace   = true
+
+[dependencies]
+itch-protocol  = { workspace = true }
+itch-soup      = { workspace = true }
+thiserror      = { workspace = true }
+tokio          = { workspace = true, features = ["net", "rt", "macros", "time", "sync", "io-util"] }
+tokio-util     = { workspace = true, features = ["codec"] }
+bytes          = { workspace = true }
+futures        = { workspace = true }
+tracing        = { workspace = true }
+zstd           = { version = "0.13", default-features = false }
+pin-project-lite = "0.2"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "rt", "macros", "time", "io-util", "test-util", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+
+[features]
+default = []

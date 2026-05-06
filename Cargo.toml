@@ -5,6 +5,7 @@ members = [
     "crates/itch-tcp",
     "crates/itch-soup",
     "crates/itch-mold",
+    "crates/itch-compressed",
     "crates/itch-source",
     "crates/itch-replay",
     "crates/itch-server",
@@ -38,6 +39,7 @@ itch-protocol    = { path = "crates/itch-protocol",    version = "0.1.0" }
 itch-tcp         = { path = "crates/itch-tcp",         version = "0.1.0" }
 itch-soup        = { path = "crates/itch-soup",        version = "0.1.0" }
 itch-mold        = { path = "crates/itch-mold",        version = "0.1.0" }
+itch-compressed  = { path = "crates/itch-compressed",  version = "0.1.0" }
 itch-source      = { path = "crates/itch-source",      version = "0.1.0" }
 itch-conformance = { path = "crates/itch-conformance", version = "0.1.0" }
 itch-book        = { path = "crates/itch-book",        version = "0.1.0" }
