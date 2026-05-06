@@ -7,7 +7,23 @@ and this project adheres to per-crate
 
 ## Unreleased
 
-### Added
+### Added (issue #41)
+
+- Sandbox conformance integration tests (8 scenarios) at
+  `crates/itch-compressed/tests/integration.rs`: 1000-message
+  happy path, mid-stream zstd corruption with drop-and-resume,
+  5-messages-in-1-payload boundary, resilient client resume from
+  sequence 51 after a 50-message drop, heartbeat / EOS / login-
+  reject forwarding, and bad-inner-ITCH recovery.
+- `sandbox_smoke` `#[ignore]` test for manual checks against
+  NASDAQ's compressed sandbox, gated on
+  `ITCH_COMPRESSED_{HOST,USER,PASS}` env vars. Not part of the CI
+  gate; instructions in `docs/TESTING.md` §4.1.
+- `docs/TRANSPORT-SPEC.md` §5 expanded with the zstd frame spec,
+  algorithm rationale, throughput table, public API summary, and
+  cross-references to ADR-0008 / ADR-0011 / ADR-0012.
+
+### Added (issue #40)
 
 - **Initial crate** (issue #40, ADR-0011). Compressed via
   SoupBinTCP — zstd-decompressed ITCH 5.0 layered on top of
