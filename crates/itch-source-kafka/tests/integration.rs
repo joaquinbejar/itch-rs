@@ -112,15 +112,19 @@ async fn connect(
             None
         }
         Err(_elapsed) => {
-            eprintln!("skipping: Kafka connect timed out after 5s");
+            eprintln!("skipping: Kafka connect timed out after {CONNECT_TIMEOUT:?}");
             None
         }
     }
 }
 
 async fn produce_record(producer: &FutureProducer, topic: &str, payload: &[u8]) -> bool {
-    // Use empty key so all records land on partition 0 by default
-    // partitioner. This keeps order deterministic for assertions.
+    // Use a single fixed key so every record routes through the
+    // same partition. Kafka's default partitioner hashes the key,
+    // and a constant key collapses to one partition; the actual
+    // partition number depends on the topic's partition count and
+    // the hash, not necessarily 0. Same partition = ordered
+    // consume, which is what the assertions need.
     let key: &[u8] = b"";
     let record = FutureRecord::to(topic).payload(payload).key(key);
     match producer.send(record, Duration::from_secs(5)).await {
@@ -133,7 +137,10 @@ async fn produce_record(producer: &FutureProducer, topic: &str, payload: &[u8]) 
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_subscribes_to_topic() {
+async fn connect_returns_source_with_topic_accessor() {
+    // Asserts the connect path succeeds and that `topic()` returns
+    // the configured value. End-to-end subscription correctness is
+    // exercised by `produce_then_consume_round_trip` below.
     let Some(brokers) = brokers() else {
         return;
     };

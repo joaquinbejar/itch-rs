@@ -75,9 +75,12 @@ pub enum KafkaSourceError {
     #[error("kafka error: {0}")]
     Kafka(#[from] KafkaError),
 
-    /// Failure decoding a record body during the initial probe.
-    /// Per-record decode failures during streaming are surfaced as
-    /// `SourceError::Backend(...)` and do not appear here.
+    /// Reserved variant for caller-driven decoder construction
+    /// errors raised before streaming starts (e.g. validating a
+    /// custom decoder via [`KafkaSource::with_decoder`]).
+    /// Per-record decode failures during streaming are surfaced
+    /// through the [`futures::Stream`] item as
+    /// [`SourceError::Backend`] and never appear here.
     #[error("decode error: {0}")]
     Decode(ProtocolError),
 
@@ -272,17 +275,13 @@ impl Stream for KafkaSource {
                             error = %err,
                             "kafka record decode failed"
                         );
-                        Poll::Ready(Some(Err(SourceError::Backend(
-                            format!("decode error: {err}").into(),
-                        ))))
+                        Poll::Ready(Some(Err(SourceError::Backend(Box::new(err)))))
                     }
                 }
             }
             Poll::Ready(Some(Err(err))) => {
                 warn!(topic = %this.topic, error = %err, "kafka consumer error");
-                Poll::Ready(Some(Err(SourceError::Backend(
-                    format!("kafka error: {err}").into(),
-                ))))
+                Poll::Ready(Some(Err(SourceError::Backend(Box::new(err)))))
             }
             // rdkafka's `MessageStream` never returns `Ready(None)` in
             // practice — the consumer drives indefinitely. Map it to

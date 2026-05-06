@@ -13,7 +13,6 @@ categories.workspace   = true
 [dependencies]
 itch-protocol = { workspace = true }
 itch-source   = { workspace = true }
-async-trait   = "0.1"
 thiserror     = { workspace = true }
 tracing       = { workspace = true }
 futures       = { workspace = true }
