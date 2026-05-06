@@ -60,6 +60,12 @@ pub use connection::{
 mod heartbeat;
 pub use heartbeat::{HeartbeatConfig, InboundHeartbeat, OutboundHeartbeat};
 
+mod resilient;
+pub use resilient::{
+    ResilientSoupClient, ResilientSoupConfig, DEFAULT_BACKOFF_MAX, DEFAULT_BACKOFF_MIN,
+    DEFAULT_RESILIENT_LOGIN_TIMEOUT,
+};
+
 /// Maximum total wire bytes the codec will accept for a single
 /// SoupBinTCP packet (length prefix + type tag + payload). Mirrors
 /// `itch-tcp::MAX_MESSAGE_LEN` so a malicious peer cannot force
