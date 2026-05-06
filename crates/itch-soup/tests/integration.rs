@@ -13,7 +13,7 @@
 //! All timing-sensitive scenarios use `tokio::time::pause` to
 //! avoid wall-clock flakiness.
 
-#![cfg(soup_integration_tests)]
+#![cfg(feature = "integration")]
 
 use std::time::Duration;
 
