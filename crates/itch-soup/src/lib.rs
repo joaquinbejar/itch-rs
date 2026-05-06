@@ -51,6 +51,9 @@ use itch_protocol::ProtocolError;
 use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
 
+mod connection;
+pub use connection::{login, SoupConnection, SoupCredentials, DEFAULT_LOGIN_TIMEOUT};
+
 /// Maximum total wire bytes the codec will accept for a single
 /// SoupBinTCP packet (length prefix + type tag + payload). Mirrors
 /// `itch-tcp::MAX_MESSAGE_LEN` so a malicious peer cannot force
@@ -156,6 +159,40 @@ pub enum SoupError {
     /// the bare codec does not track time.
     #[error("peer silent for {0:?}")]
     PeerSilent(std::time::Duration),
+
+    /// Server's `Login Accepted` packet returned a session id that
+    /// did not match the one the client requested. Per spec this is
+    /// only valid when the client requested the empty / "current"
+    /// session — any explicit mismatch is fatal.
+    #[error("session mismatch: requested {requested:?}, got {got:?}")]
+    SessionMismatch {
+        /// The session id the client asked for in `Login Request`.
+        requested: String,
+        /// The session id the server returned in `Login Accepted`.
+        got: String,
+    },
+
+    /// Server closed the socket before completing the login
+    /// handshake (peer sent EOF before `A` or `J`). Distinct from
+    /// [`SoupError::SessionEnded`] — that one represents a graceful
+    /// `Z` end-of-session after a successful login.
+    #[error("connection closed before login completed")]
+    PrematureClose,
+
+    /// Server sent an unexpected packet during the login handshake
+    /// (something other than `A`, `J`, or `+`). Indicates a buggy
+    /// or hostile peer.
+    #[error("unexpected packet during login handshake: tag 0x{tag:02X}")]
+    UnexpectedHandshakePacket {
+        /// The unexpected packet's type tag.
+        tag: u8,
+    },
+
+    /// Login handshake did not complete within the configured
+    /// timeout. The session layer raises this around the
+    /// handshake exchange.
+    #[error("login timed out after {0:?}")]
+    LoginTimeout(std::time::Duration),
 }
 
 /// Codes carried by a Login Rejected (`J`) packet.
