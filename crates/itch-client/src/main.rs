@@ -1,9 +1,13 @@
 //! Demo ITCH 5.0 subscriber binary.
 //!
 //! Connects to the demo server (default `127.0.0.1:9100`, override
-//! via `ITCH_SERVER`), decodes incoming messages, and prints one
-//! human-readable line per message to stdout. Mirrors the format
-//! shown in the workspace `README.md` quickstart.
+//! via `--server ADDR` or `ITCH_SERVER`), decodes incoming messages,
+//! and prints one human-readable line per message to stdout. Mirrors
+//! the format shown in the workspace `README.md` quickstart.
+//!
+//! Transport is selectable at runtime via `--transport tcp|soup|mold`
+//! per ADR-0008; runtime dispatch — no compile-time
+//! `#[cfg(feature)]` switching across transports.
 //!
 //! `tracing-subscriber` is initialised in `main`; library code does
 //! NOT install a global subscriber.
@@ -14,13 +18,59 @@
 use std::env;
 use std::process::ExitCode;
 
+use clap::{Parser, ValueEnum};
 use futures::StreamExt;
 use itch_protocol::{primitives::Stock, EventCode, Message, Mpid};
+use itch_soup::{
+    LoginRejectReason, ResilientSoupClient, ResilientSoupConfig, SoupCredentials, SoupError,
+};
 use itch_tcp::{connect, TransportError};
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, EnvFilter};
 
 const DEFAULT_SERVER: &str = "127.0.0.1:9100";
+const DEFAULT_USERNAME: &str = "user";
+const DEFAULT_PASSWORD: &str = "pw";
+
+/// Transport kind selected on the CLI.
+///
+/// Dispatch is at runtime per ADR-0005 / ADR-0008 — no compile-time
+/// `#[cfg(feature = "...")]` switching across transports.
+#[derive(Clone, Copy, Debug, ValueEnum, PartialEq, Eq)]
+enum Transport {
+    /// Length-prefixed framing over TCP (the default).
+    Tcp,
+    /// SoupBinTCP 3.00 (production unicast, `itch-soup`).
+    Soup,
+    /// MoldUDP64 V1.00 (production multicast, `itch-mold`).
+    /// Currently a stub — returns an error until the
+    /// `MoldStream` lands (issue #21).
+    Mold,
+}
+
+/// ITCH 5.0 subscriber CLI arguments.
+#[derive(Parser)]
+#[command(about = "ITCH 5.0 subscriber (decodes and prints messages)")]
+struct Args {
+    /// Server address. Defaults to `127.0.0.1:9100` (also honored
+    /// via the `ITCH_SERVER` env var for backward compat).
+    #[arg(long)]
+    server: Option<String>,
+
+    /// Transport. Default `tcp`. Selects the wire protocol used to
+    /// connect to the server; runtime dispatch (no
+    /// `#[cfg(feature)]`).
+    #[arg(long, value_enum, default_value_t = Transport::Tcp)]
+    transport: Transport,
+
+    /// SoupBinTCP `Login Request` username (`--transport soup` only).
+    #[arg(long, default_value = DEFAULT_USERNAME)]
+    soup_username: String,
+
+    /// SoupBinTCP `Login Request` password (`--transport soup` only).
+    #[arg(long, default_value = DEFAULT_PASSWORD)]
+    soup_password: String,
+}
 
 /// Format a single ITCH message as one human-readable line.
 ///
@@ -190,25 +240,32 @@ fn fmt_price8(raw: u64) -> String {
     format!("{whole}.{frac:08}")
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
-    fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_writer(std::io::stderr)
-        .init();
+/// Write one formatted line to stdout. Returns:
+/// - `Ok(true)`  on a successful write.
+/// - `Ok(false)` on `BrokenPipe` (downstream `head`, etc.) — caller
+///   should exit cleanly with `SUCCESS`.
+/// - `Err(_)`    on any other write failure — caller should exit
+///   with a non-zero status.
+fn write_line(line: &str) -> std::io::Result<bool> {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    match writeln!(out, "{line}") {
+        Ok(()) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => Ok(false),
+        Err(err) => Err(err),
+    }
+}
 
-    let server = env::var("ITCH_SERVER").unwrap_or_else(|_| DEFAULT_SERVER.to_string());
-
-    let mut conn = match connect(&server).await {
+/// Stream loop for `--transport tcp`.
+async fn run_tcp(server: &str) -> ExitCode {
+    let mut conn = match connect(server).await {
         Ok(c) => c,
         Err(err) => {
             error!(?err, addr = %server, "connect failed");
             return ExitCode::from(2);
         }
     };
-    info!(addr = %server, "connected; streaming messages");
+    info!(addr = %server, transport = "tcp", "connected; streaming messages");
 
     loop {
         tokio::select! {
@@ -219,19 +276,17 @@ async fn main() -> ExitCode {
             next = conn.next() => {
                 match next {
                     Some(Ok(msg)) => {
-                        // Human-readable line on stdout; tracing on
-                        // stderr (configured above). Stop on a
-                        // broken pipe (downstream `head` etc.).
-                        use std::io::Write;
                         let line = fmt_message(&msg);
-                        let mut out = std::io::stdout().lock();
-                        if let Err(err) = writeln!(out, "{line}") {
-                            if err.kind() == std::io::ErrorKind::BrokenPipe {
+                        match write_line(&line) {
+                            Ok(true) => {}
+                            Ok(false) => {
                                 info!("stdout closed by peer; exiting");
                                 return ExitCode::SUCCESS;
                             }
-                            error!(?err, "stdout write failed");
-                            return ExitCode::from(4);
+                            Err(err) => {
+                                error!(?err, "stdout write failed");
+                                return ExitCode::from(4);
+                            }
                         }
                         if matches!(msg, Message::SystemEvent(s) if s.event_code == EventCode::EndOfMessages) {
                             info!("server signaled end of messages");
@@ -239,8 +294,6 @@ async fn main() -> ExitCode {
                         }
                     }
                     Some(Err(TransportError::Protocol(err))) => {
-                        // Bad inner frame must NOT poison the stream;
-                        // the codec already advanced past the bad bytes.
                         warn!(?err, "bad inner ITCH frame; continuing");
                     }
                     Some(Err(TransportError::FrameTooLarge { got, max })) => {
@@ -251,12 +304,6 @@ async fn main() -> ExitCode {
                         return ExitCode::from(3);
                     }
                     None => {
-                        // Reaching `None` means the server closed
-                        // before sending `EndOfMessages` (the
-                        // EndOfMessages branch above already
-                        // early-returns SUCCESS). Treat as a
-                        // premature disconnect so callers can
-                        // detect truncated runs via exit code 5.
                         warn!("server closed before EndOfMessages — premature disconnect");
                         return ExitCode::from(5);
                     }
@@ -266,9 +313,120 @@ async fn main() -> ExitCode {
     }
 }
 
+/// Stream loop for `--transport soup`.
+async fn run_soup(server: &str, username: &str, password: &str) -> ExitCode {
+    let addr: std::net::SocketAddr = match server.parse() {
+        Ok(a) => a,
+        Err(err) => {
+            error!(?err, addr = %server, "invalid SocketAddr for SoupBinTCP");
+            return ExitCode::from(2);
+        }
+    };
+    let cfg = ResilientSoupConfig::new(
+        vec![addr],
+        SoupCredentials::new(username.to_string(), password.to_string()),
+    );
+    let mut client = ResilientSoupClient::new(cfg);
+    info!(addr = %server, transport = "soup", "starting resilient SoupBinTCP client");
+
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("ctrl-c received; closing connection");
+                return ExitCode::SUCCESS;
+            }
+            next = client.next_message() => {
+                match next {
+                    Some(Ok(msg)) => {
+                        let line = fmt_message(&msg);
+                        match write_line(&line) {
+                            Ok(true) => {}
+                            Ok(false) => {
+                                info!("stdout closed by peer; exiting");
+                                return ExitCode::SUCCESS;
+                            }
+                            Err(err) => {
+                                error!(?err, "stdout write failed");
+                                return ExitCode::from(4);
+                            }
+                        }
+                        if matches!(msg, Message::SystemEvent(s) if s.event_code == EventCode::EndOfMessages) {
+                            info!("server signaled end of messages");
+                            return ExitCode::SUCCESS;
+                        }
+                    }
+                    Some(Err(SoupError::Protocol(err))) => {
+                        warn!(?err, "bad inner ITCH frame; continuing");
+                    }
+                    Some(Err(SoupError::SessionEnded)) => {
+                        info!("server signaled end of session");
+                        return ExitCode::SUCCESS;
+                    }
+                    Some(Err(SoupError::LoginRejected(reason))) => {
+                        let detail = match reason {
+                            LoginRejectReason::NotAuthorized => "not authorized",
+                            LoginRejectReason::SessionUnavailable => "session unavailable",
+                        };
+                        error!(?reason, detail, "login rejected — terminal");
+                        return ExitCode::from(6);
+                    }
+                    Some(Err(err)) => {
+                        warn!(?err, "transient soup error; client will reconnect");
+                    }
+                    None => {
+                        info!("resilient client terminated");
+                        return ExitCode::SUCCESS;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Stub for `--transport mold` until `MoldStream` lands (issue #21).
+fn run_mold() -> ExitCode {
+    ExitCode::from(mold_not_available_code())
+}
+
+/// Numeric exit code returned by [`run_mold`]. Lifted to its own
+/// helper so the unit test can compare against a concrete `u8`
+/// (`ExitCode` does not implement `PartialEq`).
+#[cold]
+fn mold_not_available_code() -> u8 {
+    error!(
+        "MoldUDP64 receiver is not yet available — tracking issue #21 \
+         (use `--transport tcp` or `--transport soup` in the meantime)"
+    );
+    1
+}
+
+#[tokio::main]
+async fn main() -> ExitCode {
+    fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+
+    let args = Args::parse();
+    let server = args
+        .server
+        .clone()
+        .or_else(|| env::var("ITCH_SERVER").ok())
+        .unwrap_or_else(|| DEFAULT_SERVER.to_string());
+
+    match args.transport {
+        Transport::Tcp => run_tcp(&server).await,
+        Transport::Soup => run_soup(&server, &args.soup_username, &args.soup_password).await,
+        Transport::Mold => run_mold(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
     use itch_protocol::{
         AddOrder, Header, OrderReference, Price4, Shares, Side, Stock, StockLocate, Timestamp,
         TrackingNumber,
@@ -309,5 +467,37 @@ mod tests {
     fn fmt_side_strings() {
         assert_eq!(fmt_side(&Side::Buy), "Buy");
         assert_eq!(fmt_side(&Side::Sell), "Sell");
+    }
+
+    #[test]
+    fn default_transport_is_tcp() {
+        let args = Args::try_parse_from(["itch-client"]).expect("parse");
+        assert_eq!(args.transport, Transport::Tcp);
+    }
+
+    #[test]
+    fn transport_flag_parses_each_variant() {
+        for (flag, expected) in [
+            ("tcp", Transport::Tcp),
+            ("soup", Transport::Soup),
+            ("mold", Transport::Mold),
+        ] {
+            let args = Args::try_parse_from(["itch-client", "--transport", flag]).expect("parse");
+            assert_eq!(args.transport, expected, "flag {flag} did not parse");
+        }
+    }
+
+    #[test]
+    fn transport_flag_rejects_unknown_value() {
+        let err = Args::try_parse_from(["itch-client", "--transport", "rdma"]);
+        assert!(err.is_err(), "expected parse error for unknown transport");
+    }
+
+    #[test]
+    fn mold_transport_returns_failure_exit_code() {
+        // The stub branch returns exit code 1 ("mold not yet
+        // available"). Tested via the lifted `u8` helper because
+        // `ExitCode` itself does not implement `PartialEq`.
+        assert_eq!(mold_not_available_code(), 1);
     }
 }
