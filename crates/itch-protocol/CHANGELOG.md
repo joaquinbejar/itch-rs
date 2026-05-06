@@ -6,6 +6,15 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+### Changed
+
+- **API audit for 1.0** (#42). Added `#[non_exhaustive]` to
+  `primitives::TimestampError` so future stricter validation can
+  add reject reasons in a minor release without breaking
+  downstream `match` arms. Closed-set ITCH 5.0 enums (`Message`,
+  `EventCode`, `Side`, `CrossType`, …) deliberately stay
+  exhaustive — see the workspace `API.md` for the full policy.
+
 ### Added
 
 - **Property-based tests** (`tests/property.rs` + shared

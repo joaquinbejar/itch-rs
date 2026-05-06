@@ -366,6 +366,10 @@ async fn run_soup(server: &str, username: &str, password: &str) -> ExitCode {
                         let detail = match reason {
                             LoginRejectReason::NotAuthorized => "not authorized",
                             LoginRejectReason::SessionUnavailable => "session unavailable",
+                            // `LoginRejectReason` is `#[non_exhaustive]` —
+                            // forward-compat arm for future SoupBinTCP
+                            // reject codes.
+                            _ => "unknown reject code",
                         };
                         error!(?reason, detail, "login rejected — terminal");
                         return ExitCode::from(6);

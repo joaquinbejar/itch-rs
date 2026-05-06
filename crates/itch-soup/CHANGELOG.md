@@ -6,6 +6,15 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+### Changed
+
+- **API audit for 1.0** (#42). Added `#[non_exhaustive]` to
+  `LoginRejectReason` so NASDAQ's future SoupBinTCP reject codes
+  can ship in a minor release without breaking downstream `match`
+  arms. Updated `itch-client::run_soup` to add a fallback arm
+  ("unknown reject code"). See the workspace `API.md` for the
+  full enum-by-enum policy.
+
 ### Added
 
 - **Criterion bench `soup_codec`** (issue #31): per-packet

@@ -226,6 +226,11 @@ pub enum SoupError {
 }
 
 /// Codes carried by a Login Rejected (`J`) packet.
+///
+/// `#[non_exhaustive]` is intentional: NASDAQ may extend the
+/// SoupBinTCP reject codes in a future revision; consumers must
+/// match with a fallback arm to remain forward-compatible.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginRejectReason {
     /// `A` — Not Authorized: the username / password combination
