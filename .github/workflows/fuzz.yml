@@ -1,0 +1,60 @@
+name: fuzz-smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  smoke:
+    name: cargo-fuzz smoke (60 s per target)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - message_decode
+          - itch_codec_decode
+          - soup_packet_decode
+          - mold_packet_decode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            fuzz
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked --version "^0.13"
+      - name: Seed corpus
+        run: |
+          mkdir -p fuzz/corpus/${{ matrix.target }}
+          if [ -d fuzz/seeds/${{ matrix.target }} ]; then
+            cp -n fuzz/seeds/${{ matrix.target }}/*.bin \
+                  fuzz/corpus/${{ matrix.target }}/ 2>/dev/null || true
+          fi
+      - name: Run ${{ matrix.target }} (60 s)
+        run: |
+          cargo fuzz run \
+            --fuzz-dir fuzz \
+            ${{ matrix.target }} \
+            -- -max_total_time=60
+      - name: Upload crash artifact (only on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
+          retention-days: 7

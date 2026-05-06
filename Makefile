@@ -76,10 +76,26 @@ ifndef HISTORY
 endif
 	$(CARGO) bench --workspace --all-features -- --baseline $(HISTORY)
 
-# ---------- fuzz (post-MVP) ----------
+# ---------- fuzz ----------
 
-fuzz: ## Run cargo-fuzz smoke (60 s per target — requires nightly toolchain)
-	@echo "fuzz harness lands in issue #29 (post-v0.1)"
+FUZZ_BUDGET ?= 60
+FUZZ_TARGETS := message_decode itch_codec_decode soup_packet_decode mold_packet_decode
+
+fuzz-seed-corpus: ## Copy committed seeds into runtime corpus (idempotent)
+	@for t in $(FUZZ_TARGETS); do \
+		mkdir -p fuzz/corpus/$$t ; \
+		if [ -d fuzz/seeds/$$t ]; then \
+			cp -n fuzz/seeds/$$t/*.bin fuzz/corpus/$$t/ 2>/dev/null || true ; \
+		fi ; \
+	done
+
+fuzz: fuzz-seed-corpus ## Run cargo-fuzz smoke (FUZZ_BUDGET=60 s per target; requires nightly)
+	@for t in $(FUZZ_TARGETS); do \
+		cargo +nightly fuzz run --fuzz-dir fuzz $$t -- -max_total_time=$(FUZZ_BUDGET) || exit $$? ; \
+	done
+
+fuzz-list: ## List the configured fuzz targets
+	cargo +nightly fuzz list --fuzz-dir fuzz
 
 # ---------- composite ----------
 

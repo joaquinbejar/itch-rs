@@ -17,7 +17,11 @@
 /target/bench-hdr
 *.hgrm
 
-# Fuzz corpus (large; keep seeds, ignore the rest)
+# Fuzz runtime state — `corpus/` accumulates inputs as the fuzzer
+# explores; `artifacts/` holds crashing-input dumps. Both can grow
+# unboundedly so they stay ignored. Seeds live separately under
+# `fuzz/seeds/<target>/` and are copied into the corpus by the
+# `fuzz` Make target / CI workflow before each run.
 /fuzz/corpus/*/
 !/fuzz/corpus/*/.gitkeep
 /fuzz/artifacts
