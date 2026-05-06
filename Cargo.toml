@@ -6,6 +6,7 @@ members = [
     "crates/itch-soup",
     "crates/itch-mold",
     "crates/itch-source",
+    "crates/itch-source-redis",
     "crates/itch-replay",
     "crates/itch-server",
     "crates/itch-client",

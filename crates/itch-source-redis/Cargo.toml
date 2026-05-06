@@ -1,0 +1,28 @@
+[package]
+name        = "itch-source-redis"
+description = "Redis-backed SeqStore for distributed ITCH 5.0 publishers"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+keywords.workspace     = true
+categories.workspace   = true
+
+[dependencies]
+itch-protocol = { workspace = true }
+itch-source   = { workspace = true }
+async-trait   = "0.1"
+thiserror     = { workspace = true }
+tracing       = { workspace = true }
+bytes         = { workspace = true }
+redis         = { version = "0.27", default-features = false, features = ["tokio-comp", "connection-manager"] }
+tokio         = { workspace = true, features = ["rt", "time", "macros"] }
+
+[dev-dependencies]
+itch-source = { workspace = true }
+tokio       = { workspace = true, features = ["rt", "time", "macros", "sync", "rt-multi-thread"] }
+
+[package.metadata.docs.rs]
+all-features = true
