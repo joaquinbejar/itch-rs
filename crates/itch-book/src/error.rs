@@ -2,7 +2,7 @@
 //!
 //! [`L2Book`]: crate::book::L2Book
 
-use itch_protocol::{OrderReference, Side};
+use itch_protocol::{OrderReference, ProtocolError, Side};
 use thiserror::Error;
 
 /// Errors raised by [`L2Book::apply`].
@@ -73,4 +73,15 @@ pub enum BookError {
         /// Order reference actually found at the front of the queue.
         got: OrderReference,
     },
+
+    /// A decode error surfaced from the underlying message stream.
+    ///
+    /// Only produced by [`BookManager::run`], the async runner that
+    /// drains a `futures::Stream<Item = Result<Message,
+    /// ProtocolError>>` into the manager. The sync apply path never
+    /// produces this variant.
+    ///
+    /// [`BookManager::run`]: crate::manager::BookManager::run
+    #[error("protocol decode error: {0}")]
+    Protocol(#[from] ProtocolError),
 }

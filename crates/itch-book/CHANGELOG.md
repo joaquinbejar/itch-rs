@@ -17,12 +17,18 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     crate root; not part of the stable surface).
   - `BookError` with `OverExecution`, `UnknownOrderRef`, and
     `MismatchedSide` variants.
-- Optional `tokio-stream` feature (off by default) to gate a future
-  thin async adapter over `futures::Stream<Item = Result<Message, _>>`.
+- Optional `tokio-stream` feature (off by default) gating the async
+  `BookManager::run(stream)` adapter that drains a
+  `futures::Stream<Item = Result<Message, ProtocolError>>` into the
+  manager.
 - L3 (per-order) book — `L3Book`, `L3OrderEntry`, FIFO queue
   priority, `summary_l2()` cross-check, `BookError::FifoViolation`.
-
-### Scope
-
-- L2 + L3 single-symbol book reconstruction. The multi-symbol book
-  manager indexed by `StockLocate` is tracked under issue #38.
+- `BookManager` — multi-symbol routing by `StockLocate`, lazy
+  per-symbol L2 / L3 book creation, `R` Stock Directory →
+  `directory` cache, `symbol(locate)` lookup,
+  `tokio-stream`-gated async `run(stream)` adapter.
+- `BookError::Protocol(#[from] ProtocolError)` — additive variant for
+  the async runner's stream errors.
+- `l3` Cargo feature (default ON) gating the L3 fields and methods on
+  `BookManager`. Disable via `--no-default-features` for an L2-only
+  build; the `l3` module itself is always compiled.

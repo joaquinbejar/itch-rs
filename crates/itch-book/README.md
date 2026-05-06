@@ -13,6 +13,7 @@ levels.
 
 - **L2 price-level book** for a single symbol — `L2Book`.
 - **L3 per-order book** with FIFO queue priority — `L3Book`.
+- **Multi-symbol manager** indexed by `StockLocate` — `BookManager`.
 - Sync apply path; no transport dependency, no allocator on the
   steady-state hot path beyond a bounded `BTreeMap` / `HashMap` insert
   per new order.
@@ -21,7 +22,6 @@ levels.
 
 ## Out of scope
 
-- **Multi-symbol book manager** indexed by `StockLocate` — issue #38.
 - Republication as a `MessageSource` — see `docs/ROADMAP.md` v0.5.
 
 ## Usage
@@ -85,9 +85,44 @@ match the front-of-queue reference (malformed capture).
 
 An `L2Book` is pinned to one `StockLocate`. Messages for other symbols
 are silently no-ops, so the same book can be driven by a global
-multi-symbol stream without filtering upstream. The forthcoming
-multi-symbol manager (issue #38) will index a
-`HashMap<StockLocate, L2Book>` and dispatch on the message header.
+multi-symbol stream without filtering upstream. For a global feed,
+use `BookManager`: it indexes a `HashMap<StockLocate, L2Book>` (and,
+under default features, `HashMap<StockLocate, L3Book>`) and lazily
+creates per-symbol books on first sight, then routes each message by
+`header.stock_locate`. The `R` Stock Directory message populates a
+`StockLocate -> Stock` cache exposed via `symbol(locate)` and
+`directory()`.
+
+```rust
+use itch_book::BookManager;
+use itch_protocol::{Message, StockLocate};
+
+# fn run(stream: impl IntoIterator<Item = Message>) -> Result<(), itch_book::BookError> {
+let mut mgr = BookManager::new();
+for msg in stream {
+    mgr.apply(&msg)?;
+}
+let aapl_locate = StockLocate::from_u16(1);
+if let Some(book) = mgr.l2(aapl_locate) {
+    let _ = book.best_bid();
+}
+if let Some(symbol) = mgr.symbol(aapl_locate) {
+    let _ = symbol.as_str();
+}
+# Ok(())
+# }
+```
+
+Under the `tokio-stream` feature, `BookManager::run` drains a
+`futures::Stream<Item = Result<Message, ProtocolError>>` into the
+manager; upstream decode errors surface as `BookError::Protocol`.
+
+## Cargo features
+
+| Feature        | Default | Effect                                                       |
+|----------------|:-------:|--------------------------------------------------------------|
+| `l3`           |   on    | Enables L3 fields / methods on `BookManager`. The `l3` module itself is always compiled. Disable with `--no-default-features` for an L2-only manager. |
+| `tokio-stream` |   off   | Enables `BookManager::run`, the async stream adapter. Pulls in `tokio` and `futures`. |
 
 ## License
 

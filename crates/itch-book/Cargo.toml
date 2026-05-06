@@ -15,13 +15,22 @@ itch-protocol = { workspace = true }
 thiserror     = { workspace = true }
 
 # Optional thin async adapter that consumes a `Stream<Item = Result<Message, _>>`
-# and feeds messages into an `L2Book`. Default features stay sync-only — no
+# and feeds messages into a book. Default features stay sync-only — no
 # runtime dependency unless the consumer opts in.
 tokio   = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
 [features]
-default = []
-# Enables the async helper `apply_stream` that drains a `futures::Stream`
-# of decoded messages into an `L2Book`. Pulls in `tokio` and `futures`.
+default = ["l3"]
+# Enables the L3 (per-order) book and the L3 routing path on
+# `BookManager`. The `l3` module itself is always compiled — only the
+# `BookManager`'s L3 fields and methods are gated, so the manager can
+# stay lean for L2-only consumers via `--no-default-features`.
+l3 = []
+# Enables `BookManager::run`, an async helper that drains a
+# `futures::Stream<Item = Result<Message, ProtocolError>>` into a
+# `BookManager`. Pulls in `tokio` and `futures`.
 tokio-stream = ["dep:tokio", "dep:futures"]
