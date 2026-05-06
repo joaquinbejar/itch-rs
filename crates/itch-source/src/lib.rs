@@ -69,9 +69,9 @@ pub mod synthetic;
 pub mod testing;
 
 pub use impls::{
-    merge_by_timestamp, ChannelSource, IteratorSource, MergeByTimestamp, NullSeqStore,
-    PendingMessage, RingBufferSeqStore, RingBufferSeqStoreError, Tee, UnboundedChannelSource,
-    WarmupFromSeqStore,
+    merge_by_timestamp, paced, ChannelSource, IteratorSource, MergeByTimestamp, NullSeqStore,
+    PacedSource, Pacing, PendingMessage, RingBufferSeqStore, RingBufferSeqStoreError, Tee,
+    UnboundedChannelSource, WarmupFromSeqStore,
 };
 pub use policy::{StaticPolicy, SubscriptionPolicy};
 pub use seqstore::SeqStore;
