@@ -225,8 +225,7 @@ where
         authenticator: Auth,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(addr).await?;
-        let (utx, urx) =
-            mpsc::channel::<(SocketAddr, Message)>(DEFAULT_UNSEQUENCED_INBOX_CAPACITY);
+        let (utx, urx) = mpsc::channel::<(SocketAddr, Message)>(DEFAULT_UNSEQUENCED_INBOX_CAPACITY);
         Ok(Self {
             listener,
             source,
@@ -340,7 +339,10 @@ where
             let mut next_seq = match ingest_store.latest().await {
                 Ok(latest) => latest.saturating_add(1).max(start_sequence),
                 Err(err) => {
-                    warn!(?err, "store.latest() failed; using start_sequence as fallback");
+                    warn!(
+                        ?err,
+                        "store.latest() failed; using start_sequence as fallback"
+                    );
                     start_sequence
                 }
             };
@@ -478,7 +480,9 @@ async fn handle_subscriber<P, St>(
     let trimmed_requested = req.requested_session.trim();
     if !trimmed_requested.is_empty() && trimmed_requested != session_id.trim() {
         let _ = framed
-            .send(SoupPacket::LoginRejected(LoginRejectReason::SessionUnavailable))
+            .send(SoupPacket::LoginRejected(
+                LoginRejectReason::SessionUnavailable,
+            ))
             .await;
         let _ = framed.close().await;
         info!(
