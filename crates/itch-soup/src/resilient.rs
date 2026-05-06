@@ -376,7 +376,9 @@ impl ResilientSoupClient {
     fn backoff_delay(&self) -> Duration {
         let cfg = &self.config;
         let min_ms = u64::try_from(cfg.backoff_min.as_millis().max(1)).unwrap_or(u64::MAX);
-        let max_ms = u64::try_from(cfg.backoff_max.as_millis()).unwrap_or(u64::MAX).max(min_ms);
+        let max_ms = u64::try_from(cfg.backoff_max.as_millis())
+            .unwrap_or(u64::MAX)
+            .max(min_ms);
         // Cap exponent so `min_ms << exp` cannot overflow.
         let exp = self.attempt.min(30);
         let upper_ms = min_ms.checked_shl(exp).unwrap_or(u64::MAX).min(max_ms);
@@ -411,9 +413,7 @@ impl ResilientSoupClient {
     /// Use this when you need to compose with `StreamExt`
     /// combinators (`for_each`, `take_while`, etc.). For ad-hoc
     /// loops, [`Self::next_message`] is simpler.
-    pub fn into_stream(
-        self,
-    ) -> impl Stream<Item = Result<Message, SoupError>> + Send + Unpin {
+    pub fn into_stream(self) -> impl Stream<Item = Result<Message, SoupError>> + Send + Unpin {
         Box::pin(futures::stream::unfold(self, |mut client| async move {
             let item = client.next_message().await?;
             Some((item, client))
@@ -425,7 +425,7 @@ impl ResilientSoupClient {
 mod tests {
     use super::*;
     use crate::{
-        LoginAccepted, LoginRequest, LoginRejectReason, SoupCodec, SoupCredentials, SoupPacket,
+        LoginAccepted, LoginRejectReason, LoginRequest, SoupCodec, SoupCredentials, SoupPacket,
     };
     use futures::{SinkExt, StreamExt};
     use itch_protocol::messages::{Header, SystemEvent};
@@ -513,12 +513,9 @@ mod tests {
         ];
         let (addr, server) = spawn_scripted_server(scripts, "S0001".into()).await;
 
-        let cfg = ResilientSoupConfig::new(
-            vec![addr],
-            SoupCredentials::new("alice", "secret"),
-        )
-        .with_backoff(Duration::from_millis(5), Duration::from_millis(20))
-        .with_login_timeout(Duration::from_secs(2));
+        let cfg = ResilientSoupConfig::new(vec![addr], SoupCredentials::new("alice", "secret"))
+            .with_backoff(Duration::from_millis(5), Duration::from_millis(20))
+            .with_login_timeout(Duration::from_secs(2));
         let mut client = ResilientSoupClient::new(cfg);
 
         let mut got_ok = 0u32;
@@ -557,11 +554,8 @@ mod tests {
                 .expect("rej");
         });
 
-        let cfg = ResilientSoupConfig::new(
-            vec![addr],
-            SoupCredentials::new("bob", "wrongpw"),
-        )
-        .with_max_attempts(5);
+        let cfg = ResilientSoupConfig::new(vec![addr], SoupCredentials::new("bob", "wrongpw"))
+            .with_max_attempts(5);
         let mut client = ResilientSoupClient::new(cfg);
 
         match client.next_message().await {
@@ -584,13 +578,10 @@ mod tests {
         // Drop the listener — the address is now closed.
         drop(listener);
 
-        let cfg = ResilientSoupConfig::new(
-            vec![addr],
-            SoupCredentials::new("alice", "secret"),
-        )
-        .with_max_attempts(3)
-        .with_backoff(Duration::from_millis(1), Duration::from_millis(5))
-        .with_login_timeout(Duration::from_millis(50));
+        let cfg = ResilientSoupConfig::new(vec![addr], SoupCredentials::new("alice", "secret"))
+            .with_max_attempts(3)
+            .with_backoff(Duration::from_millis(1), Duration::from_millis(5))
+            .with_login_timeout(Duration::from_millis(50));
         let mut client = ResilientSoupClient::new(cfg);
 
         // First poll surfaces the third (final) error.
@@ -635,18 +626,13 @@ mod tests {
                 .send(SoupPacket::SequencedData(sample_payload()))
                 .await
                 .expect("data");
-            framed
-                .send(SoupPacket::EndOfSession)
-                .await
-                .expect("eos");
+            framed.send(SoupPacket::EndOfSession).await.expect("eos");
         });
 
-        let cfg = ResilientSoupConfig::new(
-            vec![addr1, addr2],
-            SoupCredentials::new("alice", "secret"),
-        )
-        .with_backoff(Duration::from_millis(1), Duration::from_millis(5))
-        .with_login_timeout(Duration::from_secs(1));
+        let cfg =
+            ResilientSoupConfig::new(vec![addr1, addr2], SoupCredentials::new("alice", "secret"))
+                .with_backoff(Duration::from_millis(1), Duration::from_millis(5))
+                .with_login_timeout(Duration::from_secs(1));
         let mut client = ResilientSoupClient::new(cfg);
 
         let mut seen_ok = false;
@@ -719,13 +705,10 @@ mod tests {
             SoupPacket::EndOfSession,
         ]];
         let (addr, server) = spawn_scripted_server(scripts, "X".into()).await;
-        let cfg = ResilientSoupConfig::new(
-            vec![addr],
-            SoupCredentials::new("alice", "secret"),
-        )
-        .with_login_timeout(Duration::from_millis(100))
-        .with_backoff(Duration::from_millis(1), Duration::from_millis(5))
-        .with_max_attempts(2);
+        let cfg = ResilientSoupConfig::new(vec![addr], SoupCredentials::new("alice", "secret"))
+            .with_login_timeout(Duration::from_millis(100))
+            .with_backoff(Duration::from_millis(1), Duration::from_millis(5))
+            .with_max_attempts(2);
         let client = ResilientSoupClient::new(cfg);
 
         let mut stream = client.into_stream();
@@ -749,6 +732,7 @@ mod tests {
             vec!["127.0.0.1:1".parse().unwrap()],
             SoupCredentials::new("u", "p"),
         );
-        let _: Arc<Mutex<ResilientSoupClient>> = Arc::new(Mutex::new(ResilientSoupClient::new(cfg)));
+        let _: Arc<Mutex<ResilientSoupClient>> =
+            Arc::new(Mutex::new(ResilientSoupClient::new(cfg)));
     }
 }
