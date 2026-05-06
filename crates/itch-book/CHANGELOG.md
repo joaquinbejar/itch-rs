@@ -19,9 +19,10 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
     `MismatchedSide` variants.
 - Optional `tokio-stream` feature (off by default) to gate a future
   thin async adapter over `futures::Stream<Item = Result<Message, _>>`.
+- L3 (per-order) book — `L3Book`, `L3OrderEntry`, FIFO queue
+  priority, `summary_l2()` cross-check, `BookError::FifoViolation`.
 
 ### Scope
 
-- L2 only. L3 per-order book reconstruction is tracked under issue
-  #37; the multi-symbol book manager indexed by `StockLocate` is
-  tracked under issue #38.
+- L2 + L3 single-symbol book reconstruction. The multi-symbol book
+  manager indexed by `StockLocate` is tracked under issue #38.

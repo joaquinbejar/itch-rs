@@ -51,4 +51,26 @@ pub enum BookError {
         /// Side carried by the offending message.
         got: Side,
     },
+
+    /// FIFO queue invariant violation detected while applying an `E`
+    /// or `C` execution.
+    ///
+    /// Per the ITCH 5.0 spec, a full execution always exhausts the
+    /// order at the *front* of its price-level queue. The L3 book
+    /// pops the front of the queue when an order's remaining shares
+    /// reach zero and asserts that the popped reference matches the
+    /// executed order. A mismatch indicates either a malformed
+    /// capture or a bug in the apply rules — surface it instead of
+    /// silently corrupting queue priority.
+    ///
+    /// The L2 book never raises this variant; the queue invariant is
+    /// L3-only.
+    #[error("FIFO violation: expected front-of-queue order {expected:?}, popped {got:?}")]
+    FifoViolation {
+        /// Order reference the apply rule expected at the front of
+        /// the level queue (the order whose remaining hit zero).
+        expected: OrderReference,
+        /// Order reference actually found at the front of the queue.
+        got: OrderReference,
+    },
 }
