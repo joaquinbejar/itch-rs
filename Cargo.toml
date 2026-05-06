@@ -10,6 +10,7 @@ members = [
     "crates/itch-server",
     "crates/itch-client",
     "crates/itch-conformance",
+    "crates/itch-rs",
 ]
 
 [workspace.package]

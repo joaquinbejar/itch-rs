@@ -1,0 +1,36 @@
+[package]
+name        = "itch-rs"
+description = "Convenience meta-crate re-exporting NASDAQ TotalView-ITCH 5.0 layers (itch-protocol, itch-tcp, itch-soup, itch-mold, itch-replay)"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+keywords.workspace     = true
+categories.workspace   = true
+
+[dependencies]
+itch-protocol = { workspace = true, optional = true }
+itch-tcp      = { workspace = true, optional = true }
+itch-soup     = { workspace = true, optional = true }
+itch-mold     = { workspace = true, optional = true }
+itch-replay   = { path = "../itch-replay", version = "0.1.0", optional = true }
+
+[features]
+default = ["protocol"]
+protocol = ["dep:itch-protocol"]
+tcp      = ["protocol", "dep:itch-tcp"]
+soup     = ["protocol", "dep:itch-soup"]
+mold     = ["protocol", "dep:itch-mold"]
+replay   = ["protocol", "dep:itch-replay"]
+full     = ["tcp", "soup", "mold", "replay"]
+
+[[example]]
+name              = "quickstart"
+path              = "examples/quickstart.rs"
+required-features = ["tcp"]
+
+[dev-dependencies]
+tokio   = { workspace = true, features = ["macros", "rt-multi-thread"] }
+futures = { workspace = true }

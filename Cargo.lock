@@ -578,6 +578,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "itch-rs"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "itch-mold",
+ "itch-protocol",
+ "itch-replay",
+ "itch-soup",
+ "itch-tcp",
+ "tokio",
+]
+
+[[package]]
 name = "itch-server"
 version = "0.1.0"
 dependencies = [
