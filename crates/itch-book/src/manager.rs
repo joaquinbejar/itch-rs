@@ -29,11 +29,11 @@
 //!
 //! ## Async runner
 //!
-//! When the `tokio-stream` feature is enabled, [`BookManager::run`]
+//! When the `tokio-stream` feature is enabled, `BookManager::run`
 //! drains a `futures::Stream<Item = Result<Message, ProtocolError>>`
 //! into the manager. A decode error from the upstream stream surfaces
-//! as [`BookError::Protocol`]; an apply-time error (e.g.
-//! [`BookError::OverExecution`]) surfaces unchanged.
+//! as `BookError::Protocol`; an apply-time error (e.g.
+//! `BookError::OverExecution`) surfaces unchanged.
 
 use std::collections::HashMap;
 

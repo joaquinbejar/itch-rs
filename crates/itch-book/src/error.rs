@@ -76,12 +76,11 @@ pub enum BookError {
 
     /// A decode error surfaced from the underlying message stream.
     ///
-    /// Only produced by [`BookManager::run`], the async runner that
-    /// drains a `futures::Stream<Item = Result<Message,
-    /// ProtocolError>>` into the manager. The sync apply path never
-    /// produces this variant.
-    ///
-    /// [`BookManager::run`]: crate::manager::BookManager::run
+    /// Only produced by `BookManager::run` (gated behind the
+    /// `tokio-stream` feature), the async runner that drains a
+    /// `futures::Stream<Item = Result<Message, ProtocolError>>`
+    /// into the manager. The sync apply path never produces this
+    /// variant.
     #[error("protocol decode error: {0}")]
     Protocol(#[from] ProtocolError),
 }
