@@ -46,75 +46,25 @@ and this project adheres to per-crate
   encode → decode equality for data, heartbeat, and
   end-of-session packets.
 - **`MoldStream` receiver + `MoldEvent`** (`Message`, `Heartbeat`,
-  `EndOfSession`, `Gap`) plus `MoldConfig`. `MoldStream::join` opens
-  a UDP socket, joins the multicast group, and yields
-  `Result<MoldEvent, MoldError>` per `futures::Stream`. Public state
-  accessors: `current_session`, `next_expected_sequence`,
-  `pending_count`, `silent_warned`. A `from_socket` constructor
-  takes any pre-bound `UdpSocket` for tests / custom socket
-  options.
-- **Heartbeat / silent-link detection** with default thresholds
-  `silence_warning = 1 s` (soft `tracing::warn!` + flag) and
-  `silence_dead_link = 15 s` (yields one
-  `MoldError::PeerSilent` then resumes). Configurable via
-  `MoldConfig::with_silence`.
-- **In-order delivery + foundational gap detection.** The
-  receiver tracks `next_expected_sequence` per ADR-0010. On a
-  packet whose first sequence is greater than expected the
-  receiver emits `MoldEvent::Gap { from, to }`, stashes the
-  out-of-order blocks in a bounded `BTreeMap<u64, Bytes>` capped
-  at `max_pending_messages` (default `10_000`), and flushes them
-  consecutively once the gap is filled by a later packet. Issue
-  #22 turns the cap into a hard `PendingBufferFull` error and
-  #24 wires up retransmission-request recovery.
-- **End-of-session** (`MsgCount = 0xFFFF`) is delivered as
-  `MoldEvent::EndOfSession { next_seq }`; subsequent stream polls
-  resolve to `None`.
-- 9 receiver unit tests using `tokio::time::pause` cover in-order
-  delivery, session lock, heartbeat, EOS, gap + flush, session
-  mismatch, retransmission drop, silent dead-link, and silent
-  soft-warning.
+  `EndOfSession`, `Gap`) plus `MoldConfig` (#21).
+- **Heartbeat / silent-link detection** (1 s warning, 15 s
+  dead-link).
+- **In-order delivery + foundational gap detection** per
+  ADR-0010 with bounded pending buffer (default 10 000).
+- **End-of-session** (`MsgCount = 0xFFFF`).
 - **Bounded pending buffer with selectable overflow policy
-  (issue #22).** Adds `PendingOverflowPolicy::{DropOldest, Error}`
-  plus `MoldConfig::with_pending_overflow` and
-  `MoldStream::pending_overflow_drops()` (cumulative observability
-  counter). Default behaviour matches `docs/TRANSPORT-SPEC.md` §4
-  (drop oldest, log warn, continue); the `Error` policy yields a
-  single typed `MoldError::PendingBufferFull { size }` per
-  overflow without poisoning the stream — caller decides whether
-  to propagate or reset state. Duplicate out-of-order sequences
-  are deduplicated and never inflate the pending buffer. 4 new
-  unit tests cover drop-oldest eviction, error-policy yield-and-
-  resume, duplicate-seq no-op, and full-buffer flush on resync.
-- **`MoldRequestServer` (issue #23) — server-side retransmission
-  cache.** Bounded `RingBufferSeqStore` (default 16 384 frames)
-  fed by the publisher and queried over a TCP control channel by
-  the receiver-side gap-recovery client (#24). Wire format:
-  request `seq:u64 BE + count:u32 BE` (12 B); response
-  `status:u32 BE + frames:u32 BE` (8 B header) followed by N
-  blocks each `len:u16 BE + body`. Status codes:
-  `STATUS_OK = 0x00000000` (full match),
-  `STATUS_HOLE = 0xFFFFFFFE` (cache hit was partial; client
-  should retry / fail open per its policy),
-  `STATUS_END_OF_SESSION = 0xFFFFFFFF` (asked past the publisher's
-  EOS marker). `MoldRequestServer::bind` returns a
-  `JoinHandle<()>` for the accept loop; `abort()` it to shut down
-  cleanly (per-conn tasks tracked in a `JoinSet` and aborted on
-  exit). `RequestClient` is the matching minimal client used by
-  the integration tests today and #24's `GapRecoveryClient`
-  tomorrow. Per-frame and per-response sizes are bounded
-  (`MAX_BLOCK_LEN`, `MAX_RESPONSE_FRAMES = 65 536`); a malicious
-  requester cannot exhaust memory.
-- 11 unit tests cover ring-buffer eviction, range lookup,
-  hole-stop in the cache, status decision, end-to-end TCP
-  request/response, hole + EOS responses, multi-request reuse,
-  and the empty-request edge case.
+  (issue #22).** `PendingOverflowPolicy::{DropOldest, Error}` +
+  `MoldConfig::with_pending_overflow` +
+  `MoldStream::pending_overflow_drops()`. Default DropOldest; the
+  `Error` policy yields `MoldError::PendingBufferFull { size }`
+  without poisoning the stream. Duplicate out-of-order sequences
+  deduplicated. 4 new unit tests.
 
 ### Notes
 
 - `#![forbid(unsafe_code)]` on every module.
 - Crate is registered in the workspace and exposes a `MoldResult<T>`
   alias for ergonomic `?` propagation.
-- Receiver, bounded buffer, request server (#21–#23) in this
-  release; gap-recovery client, publisher, integration tests
-  land in #24–#26.
+- Receiver (`MoldStream`) + bounded pending buffer (#21, #22) in
+  this release; gap recovery, request server, publisher, and
+  integration tests land in #23–#26.
