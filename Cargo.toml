@@ -11,6 +11,7 @@ members = [
     "crates/itch-client",
     "crates/itch-conformance",
     "crates/itch-book",
+    "crates/itch-orderbook",
     "crates/itch-rs",
 ]
 

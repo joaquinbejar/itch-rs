@@ -1,0 +1,12 @@
+[package]
+name        = "itch-orderbook"
+description = "Design-only stub for the future OrderBook-rs to ITCH 5.0 bridge (issue #49). Implementation tracked separately; see README.md for ADR-0013 and the bridge design."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+keywords.workspace     = true
+categories.workspace   = true
+publish = false
