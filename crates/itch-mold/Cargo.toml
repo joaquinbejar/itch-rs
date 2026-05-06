@@ -21,6 +21,7 @@ tracing       = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["net", "rt", "macros", "time", "sync", "io-util", "test-util", "rt-multi-thread"] }
+tokio-stream = "0.1"
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
 
