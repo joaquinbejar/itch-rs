@@ -8,6 +8,47 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Login state machine** (`SoupConnection`, `login`,
+  `login_with_timeout`, `SoupCredentials`,
+  `DEFAULT_LOGIN_TIMEOUT`). Performs the
+  `LoginRequest → LoginAccepted | LoginRejected` handshake on any
+  `AsyncRead + AsyncWrite + Unpin` (typically a `TcpStream`) and
+  returns a `SoupConnection<S>` whose three async methods cover the
+  data phase: `next_message()` (filters out heartbeats / debug
+  packets, converts `EndOfSession` → `SessionEnded`, decodes
+  sequenced-data payloads into `itch_protocol::Message`),
+  `send(Message)` (emits `UnsequencedData`), and `logout()`
+  (sends `LogoutRequest` and closes). Per ADR-0009 the base
+  connection does NOT auto-reconnect — every fatal session event is
+  surfaced as a typed error so the higher-level
+  `ResilientSoupClient` (later issue) can drive the retry loop.
+- Sequence-resume support: `SoupConnection::next_expected_sequence()`
+  returns the next sequenced-data sequence number, initialised from
+  the server's `LoginAccepted` reply and incremented per delivered
+  message. Pass it back into `login`'s `requested_sequence` argument
+  on reconnect. `SoupConnection::session()` exposes the negotiated
+  session id for the same purpose.
+- Four new structured `SoupError` variants:
+  `SessionMismatch { requested, got }` (server's `LoginAccepted`
+  returned a different session than an explicit non-empty request),
+  `PrematureClose` (peer hung up before sending `A` / `J`),
+  `UnexpectedHandshakePacket { tag }` (non-`A`/`J`/`+` during the
+  handshake, or `A`/`J`/`L`/`U`/`R`/`O` during the data phase),
+  `LoginTimeout(Duration)` (handshake exceeded the configured
+  bound; default 10 s).
+- 14 unit tests in `connection::tests` (over-deliver vs. the 8 the
+  issue requires): successful login + state assertions, login
+  rejected for both `NotAuthorized` and `SessionUnavailable`,
+  premature close before reply, premature close after
+  `LoginRequest` write, login timeout (uses `tokio::time::pause`
+  via `#[tokio::test(start_paused = true)]`), session mismatch on
+  explicit requested-session, blank-session accept-anything
+  semantics, unexpected handshake packet (`H`), debug-packet
+  swallowed during handshake, sequenced-data delivery + counter
+  increment + `SessionEnded`, `logout()` emits `LogoutRequest` then
+  closes, `send()` emits `UnsequencedData`, and a `Framed`
+  wire-shape sanity check. Total crate test count: 32 passing.
+
 - Initial crate skeleton: SoupBinTCP 3.00 packet envelope codec
   (length-type-payload framing). See `docs/specs/soupbintcp-3.0.md`
   and `docs/TRANSPORT-SPEC.md` §3.
