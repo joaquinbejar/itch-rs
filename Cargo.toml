@@ -8,6 +8,7 @@ members = [
     "crates/itch-source",
     "crates/itch-source-redis",
     "crates/itch-source-postgres",
+    "crates/itch-source-kafka",
     "crates/itch-replay",
     "crates/itch-server",
     "crates/itch-client",
