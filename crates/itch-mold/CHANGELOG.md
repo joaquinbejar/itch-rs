@@ -86,6 +86,29 @@ and this project adheres to per-crate
   are deduplicated and never inflate the pending buffer. 4 new
   unit tests cover drop-oldest eviction, error-policy yield-and-
   resume, duplicate-seq no-op, and full-buffer flush on resync.
+- **`MoldRequestServer` (issue #23) — server-side retransmission
+  cache.** Bounded `RingBufferSeqStore` (default 16 384 frames)
+  fed by the publisher and queried over a TCP control channel by
+  the receiver-side gap-recovery client (#24). Wire format:
+  request `seq:u64 BE + count:u32 BE` (12 B); response
+  `status:u32 BE + frames:u32 BE` (8 B header) followed by N
+  blocks each `len:u16 BE + body`. Status codes:
+  `STATUS_OK = 0x00000000` (full match),
+  `STATUS_HOLE = 0xFFFFFFFE` (cache hit was partial; client
+  should retry / fail open per its policy),
+  `STATUS_END_OF_SESSION = 0xFFFFFFFF` (asked past the publisher's
+  EOS marker). `MoldRequestServer::bind` returns a
+  `JoinHandle<()>` for the accept loop; `abort()` it to shut down
+  cleanly (per-conn tasks tracked in a `JoinSet` and aborted on
+  exit). `RequestClient` is the matching minimal client used by
+  the integration tests today and #24's `GapRecoveryClient`
+  tomorrow. Per-frame and per-response sizes are bounded
+  (`MAX_BLOCK_LEN`, `MAX_RESPONSE_FRAMES = 65 536`); a malicious
+  requester cannot exhaust memory.
+- 11 unit tests cover ring-buffer eviction, range lookup,
+  hole-stop in the cache, status decision, end-to-end TCP
+  request/response, hole + EOS responses, multi-request reuse,
+  and the empty-request edge case.
 
 ### Notes
 

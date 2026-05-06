@@ -50,6 +50,7 @@ mod codec;
 mod error;
 mod event;
 mod receiver;
+mod request_server;
 
 pub use codec::{
     session_from_str, MessageBlock, MoldPacket, MoldPacketHeader, BLOCK_LEN_PREFIX,
@@ -60,6 +61,11 @@ pub use event::MoldEvent;
 pub use receiver::{
     MoldConfig, MoldStream, PendingOverflowPolicy, DEFAULT_MAX_PENDING, DEFAULT_SILENCE_DEAD_LINK,
     DEFAULT_SILENCE_WARNING, RECV_BUFFER_LEN,
+};
+pub use request_server::{
+    CachedFrame, MoldRequestServer, RequestClient, RequestResponse, RingBufferSeqStore,
+    DEFAULT_CACHE_CAPACITY, MAX_RESPONSE_FRAMES, REQUEST_FRAME_LEN, RESPONSE_HEADER_LEN,
+    STATUS_END_OF_SESSION, STATUS_HOLE, STATUS_OK,
 };
 
 /// Convenience alias used across the receiver / publisher API.
