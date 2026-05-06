@@ -45,6 +45,35 @@ and this project adheres to per-crate
 - 24 unit tests cover every documented codec failure mode plus
   encode → decode equality for data, heartbeat, and
   end-of-session packets.
+- **`MoldStream` receiver + `MoldEvent`** (`Message`, `Heartbeat`,
+  `EndOfSession`, `Gap`) plus `MoldConfig`. `MoldStream::join` opens
+  a UDP socket, joins the multicast group, and yields
+  `Result<MoldEvent, MoldError>` per `futures::Stream`. Public state
+  accessors: `current_session`, `next_expected_sequence`,
+  `pending_count`, `silent_warned`. A `from_socket` constructor
+  takes any pre-bound `UdpSocket` for tests / custom socket
+  options.
+- **Heartbeat / silent-link detection** with default thresholds
+  `silence_warning = 1 s` (soft `tracing::warn!` + flag) and
+  `silence_dead_link = 15 s` (yields one
+  `MoldError::PeerSilent` then resumes). Configurable via
+  `MoldConfig::with_silence`.
+- **In-order delivery + foundational gap detection.** The
+  receiver tracks `next_expected_sequence` per ADR-0010. On a
+  packet whose first sequence is greater than expected the
+  receiver emits `MoldEvent::Gap { from, to }`, stashes the
+  out-of-order blocks in a bounded `BTreeMap<u64, Bytes>` capped
+  at `max_pending_messages` (default `10_000`), and flushes them
+  consecutively once the gap is filled by a later packet. Issue
+  #22 turns the cap into a hard `PendingBufferFull` error and
+  #24 wires up retransmission-request recovery.
+- **End-of-session** (`MsgCount = 0xFFFF`) is delivered as
+  `MoldEvent::EndOfSession { next_seq }`; subsequent stream polls
+  resolve to `None`.
+- 9 receiver unit tests using `tokio::time::pause` cover in-order
+  delivery, session lock, heartbeat, EOS, gap + flush, session
+  mismatch, retransmission drop, silent dead-link, and silent
+  soft-warning.
 
 ### Notes
 
@@ -52,4 +81,5 @@ and this project adheres to per-crate
 - Crate is registered in the workspace and exposes a `MoldResult<T>`
   alias for ergonomic `?` propagation.
 - Receiver (`MoldStream`), gap recovery, request server, publisher,
-  and integration tests land in issues #21–#26.
+  and integration tests land in issues #21–#26 (with #21 in this
+  release).
