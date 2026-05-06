@@ -46,20 +46,25 @@ and this project adheres to per-crate
   encode → decode equality for data, heartbeat, and
   end-of-session packets.
 - **`MoldStream` receiver + `MoldEvent`** (`Message`, `Heartbeat`,
-  `EndOfSession`, `Gap`) plus `MoldConfig`. `MoldStream::join` opens
-  a UDP socket, joins the multicast group, and yields
-  `Result<MoldEvent, MoldError>` per `futures::Stream`.
+  `EndOfSession`, `Gap`) plus `MoldConfig` (#21).
 - **Heartbeat / silent-link detection** (1 s warning, 15 s
-  dead-link). Configurable via `MoldConfig::with_silence`.
+  dead-link).
 - **In-order delivery + foundational gap detection** per
   ADR-0010 with bounded pending buffer (default 10 000).
 - **End-of-session** (`MsgCount = 0xFFFF`).
-- 9 receiver unit tests using `tokio::time::pause`.
+- **Bounded pending buffer with selectable overflow policy
+  (issue #22).** `PendingOverflowPolicy::{DropOldest, Error}` +
+  `MoldConfig::with_pending_overflow` +
+  `MoldStream::pending_overflow_drops()`. Default DropOldest; the
+  `Error` policy yields `MoldError::PendingBufferFull { size }`
+  without poisoning the stream. Duplicate out-of-order sequences
+  deduplicated. 4 new unit tests.
 
 ### Notes
 
 - `#![forbid(unsafe_code)]` on every module.
 - Crate is registered in the workspace and exposes a `MoldResult<T>`
   alias for ergonomic `?` propagation.
-- Receiver (`MoldStream`) lands in #21 (this release); gap recovery,
-  request server, publisher, and integration tests land in #22–#26.
+- Receiver (`MoldStream`) + bounded pending buffer (#21, #22) in
+  this release; gap recovery, request server, publisher, and
+  integration tests land in #23–#26.
