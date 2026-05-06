@@ -58,7 +58,7 @@ pub use codec::{
 pub use error::MoldError;
 pub use event::MoldEvent;
 pub use receiver::{
-    MoldConfig, MoldStream, DEFAULT_MAX_PENDING, DEFAULT_SILENCE_DEAD_LINK,
+    MoldConfig, MoldStream, PendingOverflowPolicy, DEFAULT_MAX_PENDING, DEFAULT_SILENCE_DEAD_LINK,
     DEFAULT_SILENCE_WARNING, RECV_BUFFER_LEN,
 };
 

@@ -74,6 +74,18 @@ and this project adheres to per-crate
   delivery, session lock, heartbeat, EOS, gap + flush, session
   mismatch, retransmission drop, silent dead-link, and silent
   soft-warning.
+- **Bounded pending buffer with selectable overflow policy
+  (issue #22).** Adds `PendingOverflowPolicy::{DropOldest, Error}`
+  plus `MoldConfig::with_pending_overflow` and
+  `MoldStream::pending_overflow_drops()` (cumulative observability
+  counter). Default behaviour matches `docs/TRANSPORT-SPEC.md` §4
+  (drop oldest, log warn, continue); the `Error` policy yields a
+  single typed `MoldError::PendingBufferFull { size }` per
+  overflow without poisoning the stream — caller decides whether
+  to propagate or reset state. Duplicate out-of-order sequences
+  are deduplicated and never inflate the pending buffer. 4 new
+  unit tests cover drop-oldest eviction, error-policy yield-and-
+  resume, duplicate-seq no-op, and full-buffer flush on resync.
 
 ### Notes
 

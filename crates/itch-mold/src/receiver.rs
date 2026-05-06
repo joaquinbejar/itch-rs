@@ -50,9 +50,32 @@ pub const DEFAULT_SILENCE_WARNING: Duration = Duration::from_secs(1);
 pub const DEFAULT_SILENCE_DEAD_LINK: Duration = Duration::from_secs(15);
 
 /// Default maximum pending out-of-order blocks held while waiting
-/// for gap recovery. Issue #22 turns overflow into a hard error;
-/// for now we drop oldest with a warning.
+/// for gap recovery (issues #22 / #24). Receivers under sustained
+/// loss on a high-throughput feed need more headroom; bump this in
+/// `MoldConfig`.
 pub const DEFAULT_MAX_PENDING: usize = 10_000;
+
+/// What to do when the pending buffer is full.
+///
+/// - [`PendingOverflowPolicy::DropOldest`] (default): pop the
+///   smallest sequence currently buffered, log a warning, and
+///   make room for the new entry. The application loses one
+///   message but the stream continues. ADR-0010 calls this the
+///   conservative path.
+/// - [`PendingOverflowPolicy::Error`]: yield a single
+///   [`MoldError::PendingBufferFull`] from the stream and drop
+///   the new block. The stream is **not** poisoned — the next
+///   packet (or a successful retransmission once #24 lands) flushes
+///   normally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PendingOverflowPolicy {
+    /// Drop the oldest pending entry and accept the new one.
+    #[default]
+    DropOldest,
+    /// Surface a [`MoldError::PendingBufferFull`] error and drop
+    /// the new entry.
+    Error,
+}
 
 /// Maximum UDP datagram the receiver will accept. 2 KiB is enough
 /// for any well-formed MoldUDP64 packet (header 20 B + many small
@@ -84,6 +107,8 @@ pub struct MoldConfig {
     pub silence_dead_link: Duration,
     /// Cap on the pending out-of-order buffer.
     pub max_pending_messages: usize,
+    /// Behaviour when the pending buffer overflows.
+    pub pending_overflow: PendingOverflowPolicy,
 }
 
 impl Default for MoldConfig {
@@ -97,6 +122,7 @@ impl Default for MoldConfig {
             silence_warning: DEFAULT_SILENCE_WARNING,
             silence_dead_link: DEFAULT_SILENCE_DEAD_LINK,
             max_pending_messages: DEFAULT_MAX_PENDING,
+            pending_overflow: PendingOverflowPolicy::DropOldest,
         }
     }
 }
@@ -138,6 +164,13 @@ impl MoldConfig {
         self.max_pending_messages = n;
         self
     }
+
+    /// Override the pending-overflow policy.
+    #[inline]
+    pub fn with_pending_overflow(mut self, policy: PendingOverflowPolicy) -> Self {
+        self.pending_overflow = policy;
+        self
+    }
 }
 
 /// Internal receiver state shared between the async UDP path and
@@ -162,8 +195,13 @@ pub(crate) struct ReceiverState {
     pub(crate) eos: bool,
     /// Cap on the pending buffer.
     pub(crate) max_pending: usize,
+    /// Pending-overflow policy.
+    pub(crate) pending_overflow: PendingOverflowPolicy,
     /// Configured `start_sequence`.
     pub(crate) start_sequence: u64,
+    /// Number of pending entries dropped to overflow (cumulative,
+    /// observability only).
+    pub(crate) overflow_drops: u64,
 }
 
 impl ReceiverState {
@@ -176,7 +214,9 @@ impl ReceiverState {
             outbox: std::collections::VecDeque::new(),
             eos: false,
             max_pending: cfg.max_pending_messages,
+            pending_overflow: cfg.pending_overflow,
             start_sequence: cfg.start_sequence,
+            overflow_drops: 0,
         }
     }
 
@@ -297,13 +337,30 @@ impl ReceiverState {
             return;
         }
         if self.pending.len() >= self.max_pending {
-            // Drop oldest, emit warning. Issue #22 turns this into
-            // a hard PendingBufferFull error.
-            if let Some((old_seq, _)) = self.pending.pop_first() {
-                tracing::warn!(
-                    dropped_seq = old_seq,
-                    "pending buffer full; dropping oldest entry"
-                );
+            match self.pending_overflow {
+                PendingOverflowPolicy::DropOldest => {
+                    if let Some((old_seq, _)) = self.pending.pop_first() {
+                        self.overflow_drops += 1;
+                        tracing::warn!(
+                            dropped_seq = old_seq,
+                            new_seq = seq,
+                            buffer_size = self.pending.len() + 1,
+                            "pending buffer full; dropping oldest entry"
+                        );
+                    }
+                }
+                PendingOverflowPolicy::Error => {
+                    self.overflow_drops += 1;
+                    self.outbox.push_back(Err(MoldError::PendingBufferFull {
+                        size: self.max_pending,
+                    }));
+                    tracing::warn!(
+                        dropped_seq = seq,
+                        buffer_size = self.pending.len(),
+                        "pending buffer full; dropping new entry (Error policy)"
+                    );
+                    return;
+                }
             }
         }
         self.pending.insert(seq, data);
@@ -458,6 +515,13 @@ impl MoldStream {
     #[must_use]
     pub fn pending_count(&self) -> usize {
         self.state.pending.len()
+    }
+
+    /// Cumulative number of pending entries dropped to overflow.
+    /// Useful as a metrics hook in long-running deployments.
+    #[must_use]
+    pub fn pending_overflow_drops(&self) -> u64 {
+        self.state.overflow_drops
     }
 
     /// `true` iff the soft silence-warning threshold has been
@@ -838,5 +902,135 @@ mod tests {
         let evt = stream.next().await.unwrap().unwrap();
         assert!(matches!(evt, MoldEvent::Message { sequence: 1, .. }));
         assert!(!stream.silent_warned());
+    }
+
+    // ---------- Issue #22: bounded pending buffer ----------
+
+    /// Drop-oldest policy (the default): when the pending buffer
+    /// is at capacity and a new out-of-order block arrives, the
+    /// oldest pending entry is evicted to make room. The receiver
+    /// continues unaffected.
+    #[tokio::test(start_paused = true)]
+    async fn pending_drop_oldest_evicts_lowest_seq() {
+        let cfg = MoldConfig::default()
+            .with_session(fixture_session())
+            .with_max_pending(3)
+            .with_pending_overflow(PendingOverflowPolicy::DropOldest)
+            .with_start_sequence(1);
+        let mut stream = MoldStream::test_only(cfg);
+
+        // Bootstrap with seq=1.
+        stream.test_ingest(data_packet(fixture_session(), 1, &[add_order(1)]));
+        let _ = stream.next().await.unwrap().unwrap();
+        assert_eq!(stream.next_expected_sequence(), 2);
+
+        // Three out-of-order packets fill the buffer.
+        for s in [10u64, 11, 12] {
+            stream.test_ingest(data_packet(fixture_session(), s, &[add_order(s)]));
+            let _ = stream.next().await.unwrap().unwrap();
+        }
+        assert_eq!(stream.pending_count(), 3);
+        assert_eq!(stream.pending_overflow_drops(), 0);
+
+        // Adding seq=13 forces eviction of seq=10 (oldest).
+        stream.test_ingest(data_packet(fixture_session(), 13, &[add_order(13)]));
+        let _ = stream.next().await.unwrap().unwrap();
+        assert_eq!(stream.pending_count(), 3, "cap respected");
+        assert_eq!(stream.pending_overflow_drops(), 1);
+    }
+
+    /// Error policy: overflow yields a typed
+    /// `MoldError::PendingBufferFull` and the new entry is
+    /// dropped. The stream is **not** poisoned.
+    #[tokio::test(start_paused = true)]
+    async fn pending_error_policy_yields_error_and_resumes() {
+        let cfg = MoldConfig::default()
+            .with_session(fixture_session())
+            .with_max_pending(2)
+            .with_pending_overflow(PendingOverflowPolicy::Error)
+            .with_start_sequence(1);
+        let mut stream = MoldStream::test_only(cfg);
+
+        // Bootstrap.
+        stream.test_ingest(data_packet(fixture_session(), 1, &[add_order(1)]));
+        let _ = stream.next().await.unwrap().unwrap();
+
+        // Two out-of-order packets fill the buffer.
+        for s in [10u64, 11] {
+            stream.test_ingest(data_packet(fixture_session(), s, &[add_order(s)]));
+            let _ = stream.next().await.unwrap().unwrap();
+        }
+        assert_eq!(stream.pending_count(), 2);
+
+        // Third triggers the policy. The Gap event is queued first,
+        // then the PendingBufferFull error.
+        stream.test_ingest(data_packet(fixture_session(), 12, &[add_order(12)]));
+        let next1 = stream.next().await.unwrap();
+        assert!(matches!(next1, Ok(MoldEvent::Gap { .. })));
+        let next2 = stream.next().await.unwrap();
+        match next2 {
+            Err(MoldError::PendingBufferFull { size: 2 }) => {}
+            other => panic!("expected PendingBufferFull, got {other:?}"),
+        }
+        assert_eq!(stream.pending_count(), 2);
+        assert_eq!(stream.pending_overflow_drops(), 1);
+    }
+
+    /// Duplicate out-of-order blocks at the same sequence do not
+    /// inflate the pending buffer.
+    #[tokio::test(start_paused = true)]
+    async fn pending_duplicate_seq_is_no_op() {
+        let cfg = MoldConfig::default()
+            .with_session(fixture_session())
+            .with_start_sequence(1);
+        let mut stream = MoldStream::test_only(cfg);
+
+        // Bootstrap.
+        stream.test_ingest(data_packet(fixture_session(), 1, &[add_order(1)]));
+        let _ = stream.next().await.unwrap().unwrap();
+
+        // First gap event: pending=1.
+        stream.test_ingest(data_packet(fixture_session(), 5, &[add_order(5)]));
+        let _ = stream.next().await.unwrap().unwrap();
+        assert_eq!(stream.pending_count(), 1);
+
+        // Re-deliver of seq=5: still 1 in the buffer.
+        stream.test_ingest(data_packet(fixture_session(), 5, &[add_order(5)]));
+        let _ = stream.next().await.unwrap().unwrap();
+        assert_eq!(stream.pending_count(), 1);
+    }
+
+    /// Full pending buffer that gets fully flushed on a single
+    /// catch-up packet returns the buffer to empty and yields
+    /// every message in order.
+    #[tokio::test(start_paused = true)]
+    async fn pending_full_then_full_flush_returns_all_in_order() {
+        let cfg = MoldConfig::default()
+            .with_session(fixture_session())
+            .with_max_pending(5)
+            .with_start_sequence(1);
+        let mut stream = MoldStream::test_only(cfg);
+
+        // Bootstrap with seq=1; expected jumps to 2.
+        stream.test_ingest(data_packet(fixture_session(), 1, &[add_order(1)]));
+        let _ = stream.next().await.unwrap().unwrap();
+
+        // Out-of-order packets at seq=3..=6 (a hole at 2).
+        for s in 3u64..=6 {
+            stream.test_ingest(data_packet(fixture_session(), s, &[add_order(s)]));
+            let _ = stream.next().await.unwrap().unwrap();
+        }
+        assert_eq!(stream.pending_count(), 4);
+
+        // Filler at seq=2 closes the hole; deliver 2..=6 in order.
+        stream.test_ingest(data_packet(fixture_session(), 2, &[add_order(2)]));
+        for expected in 2u64..=6 {
+            match stream.next().await.unwrap().unwrap() {
+                MoldEvent::Message { sequence, .. } => assert_eq!(sequence, expected),
+                other => panic!("unexpected: {other:?}"),
+            }
+        }
+        assert_eq!(stream.next_expected_sequence(), 7);
+        assert_eq!(stream.pending_count(), 0);
     }
 }
