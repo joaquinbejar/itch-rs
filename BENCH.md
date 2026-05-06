@@ -16,7 +16,31 @@ samples per scenario.
 |----------------------|--------------------------------------|
 | Toolchain            | stable (see `rust-toolchain.toml`)   |
 | Workspace baseline   | `v0.4` development tip               |
-| Last filled          | _to be filled at v0.4.0 tag_         |
+| Last filled          | 2026-05-06                           |
+
+## Published numbers
+
+The most recent end-to-end run is committed under
+[`docs/benchmarks/2026-05-06/`](docs/benchmarks/2026-05-06/methodology.md):
+
+- [`methodology.md`](docs/benchmarks/2026-05-06/methodology.md) —
+  hardware, governor, Rust version, `RUSTFLAGS`, LTO, allocator,
+  reproduction commands.
+- [`decode_per_message.csv`](docs/benchmarks/2026-05-06/decode_per_message.csv)
+  / [`encode_per_message.csv`](docs/benchmarks/2026-05-06/encode_per_message.csv)
+  — per ITCH 5.0 message kind, mean / low / high in nanoseconds.
+- [`throughput_1mib.txt`](docs/benchmarks/2026-05-06/throughput_1mib.txt)
+  — Criterion-rendered 1 MiB mixed-workload summary.
+- [`itch_soup_raw.txt`](docs/benchmarks/2026-05-06/itch_soup_raw.txt)
+  / [`itch_mold_raw.txt`](docs/benchmarks/2026-05-06/itch_mold_raw.txt)
+  — `SoupCodec` / `MoldPacket` codec benches.
+- `*_hdr.txt` — placeholders for the dedicated `bench-hdr` HDR-
+  histogram harness (deferred to its own ticket; see each file's
+  preamble for status).
+
+The dated folder is the source of truth — the per-case tables below
+remain as a quick-reference index. Re-run on a fresh host, drop the
+output under `docs/benchmarks/<YYYY-MM-DD>/`, and link it here.
 
 ## Scenarios
 
