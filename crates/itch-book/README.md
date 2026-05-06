@@ -9,18 +9,18 @@ level on each side, backed by an order-reference index that resolves
 per-order mutations (`E` / `C` / `X` / `D` / `U`) without scanning the
 levels.
 
-## Scope (v0.1)
+## Scope
 
 - **L2 price-level book** for a single symbol — `L2Book`.
+- **L3 per-order book** with FIFO queue priority — `L3Book`.
 - Sync apply path; no transport dependency, no allocator on the
   steady-state hot path beyond a bounded `BTreeMap` / `HashMap` insert
   per new order.
 - Exhaustive match over every `Message` variant — new ITCH revisions
   surface as compile errors.
 
-## Out of scope (v0.1)
+## Out of scope
 
-- **L3 per-order book** with queue priority — issue #37.
 - **Multi-symbol book manager** indexed by `StockLocate` — issue #38.
 - Republication as a `MessageSource` — see `docs/ROADMAP.md` v0.5.
 
@@ -65,6 +65,21 @@ assert_eq!(book.best_bid(), Some((Price4::from_u32(1_925_000), 500)));
 | `D` Order Delete                              | remove order; subtract its remaining shares from the level |
 | `U` Order Replace                             | remove the original; insert a new entry under `new_order_ref` at the new price/shares (preserving side) |
 | `S, R, H, Y, L, V, W, K, P, Q, B, I, N`       | no L2 effect |
+
+## L3 (per-order) book
+
+`L3Book` adds FIFO queue priority on top of the L2 abstraction. Each
+price level is a `VecDeque<OrderReference>` in arrival order; full
+executions pop the front of the queue, partial cancels keep the
+order in place, deletes / full-cancels can remove from any position,
+and replaces reset priority by appending the new order to the back
+of its destination level's queue.
+
+The L3 book exposes `order(...)`, `queue_position(...)`,
+`level_orders(...)`, and a `summary_l2()` helper that re-derives an
+`L2Book` from the current L3 state for cross-validation.
+`BookError::FifoViolation` surfaces when a full execution does not
+match the front-of-queue reference (malformed capture).
 
 ## Multi-symbol streams
 

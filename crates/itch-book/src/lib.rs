@@ -8,29 +8,31 @@
 //! reference index that resolves per-order mutations
 //! (`E` / `C` / `X` / `D` / `U`) without scanning the levels.
 //!
-//! # Scope (v0.1)
+//! # Scope (v0.2)
 //!
 //! - **L2 price-level book** for a single symbol — see [`L2Book`].
+//! - **L3 per-order book** with FIFO queue priority — see [`L3Book`].
 //! - Sync apply path; no transport dependency, no allocator on the
 //!   steady-state hot path beyond a bounded `BTreeMap` / `HashMap`
 //!   insert per new order.
 //! - Exhaustive match over every [`Message`](itch_protocol::Message)
 //!   variant. New ITCH revisions surface as compile errors.
 //!
-//! # Out of scope (v0.1)
+//! # Out of scope
 //!
-//! - **L3 per-order book** with queue priority — issue #37.
 //! - **Multi-symbol book manager** indexed by
 //!   [`StockLocate`](itch_protocol::StockLocate) — issue #38.
 //! - Republication as a `MessageSource` — see `docs/ROADMAP.md` v0.5
-//!   and ADR-0007. The L2 reconstruction described here is the
+//!   and ADR-0007. The book reconstructions described here are the
 //!   foundation those layers build on.
 //!
 //! # Module layout
 //!
 //! - [`book`] — [`L2Book`] and the per-order [`OrderEntry`] record.
+//! - [`l3`] — [`L3Book`] and the [`L3OrderEntry`] record (FIFO queue
+//!   priority, `summary_l2()` cross-check).
 //! - [`error`] — [`BookError`], the only error type returned by
-//!   [`L2Book::apply`].
+//!   [`L2Book::apply`] and [`L3Book::apply`].
 //!
 //! # Example
 //!
@@ -66,6 +68,8 @@
 
 pub mod book;
 pub mod error;
+pub mod l3;
 
 pub use book::{L2Book, OrderEntry};
 pub use error::BookError;
+pub use l3::{L3Book, L3OrderEntry};
