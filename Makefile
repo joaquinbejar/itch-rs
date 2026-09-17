@@ -54,10 +54,10 @@ doc: ## Build rustdoc (deny warnings)
 # ---------- coverage ----------
 
 coverage: ## Run cargo tarpaulin (line coverage to stdout)
-	$(CARGO) tarpaulin --workspace --all-features --out Stdout
+	$(CARGO) tarpaulin --engine llvm --workspace --all-features --out Stdout
 
 coverage-html: ## Run cargo tarpaulin with HTML output
-	$(CARGO) tarpaulin --workspace --all-features --out Html
+	$(CARGO) tarpaulin --engine llvm --workspace --all-features --out Html
 
 # ---------- benchmarks ----------
 
