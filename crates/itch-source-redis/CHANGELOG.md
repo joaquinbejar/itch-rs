@@ -12,6 +12,10 @@ All notable changes to this project will be documented in this file.
 - `RedisSeqStoreConfig` builder for runtime configuration.
 - Full compliance with `itch_source::SeqStore` contract.
 
+### Changed
+
+- Dependencies updated to latest stable versions (`redis` 0.27 -> 1.7).
+
 ## [0.1.0] — 2026-05-06
 
 ### Initial Release

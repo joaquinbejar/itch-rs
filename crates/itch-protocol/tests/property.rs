@@ -286,66 +286,51 @@ enum_unknown_byte_test!(
     event_code_unknown_byte_errors,
     EventCode,
     "EventCode",
-    [b'O', b'S', b'Q', b'M', b'E', b'C']
+    b"OSQMEC"
 );
 enum_unknown_byte_test!(
     market_category_unknown_byte_errors,
     MarketCategory,
     "MarketCategory",
-    [b'Q', b'G', b'S', b'A', b'N', b'P', b'Z', b'V', b' ']
+    b"QGSANPZV "
 );
 enum_unknown_byte_test!(
     financial_status_unknown_byte_errors,
     FinancialStatus,
     "FinancialStatus",
-    [b'D', b'E', b'Q', b'S', b'G', b'H', b'J', b'K', b'C', b'N', b' ']
+    b"DEQSGHJKCN "
 );
 enum_unknown_byte_test!(
     authenticity_unknown_byte_errors,
     Authenticity,
     "Authenticity",
-    [b'P', b'T']
+    b"PT"
 );
-enum_unknown_byte_test!(
-    yes_no_unknown_byte_errors,
-    YesNo,
-    "YesNo",
-    [b'Y', b'N', b' ']
-);
-enum_unknown_byte_test!(
-    luld_tier_unknown_byte_errors,
-    LuldTier,
-    "LuldTier",
-    [b'1', b'2', b' ']
-);
+enum_unknown_byte_test!(yes_no_unknown_byte_errors, YesNo, "YesNo", b"YN ");
+enum_unknown_byte_test!(luld_tier_unknown_byte_errors, LuldTier, "LuldTier", b"12 ");
 enum_unknown_byte_test!(
     trading_state_unknown_byte_errors,
     TradingState,
     "TradingState",
-    [b'H', b'P', b'Q', b'T']
+    b"HPQT"
 );
 enum_unknown_byte_test!(
     reg_sho_action_unknown_byte_errors,
     RegShoAction,
     "RegShoAction",
-    [b'0', b'1', b'2']
+    b"012"
 );
-enum_unknown_byte_test!(side_unknown_byte_errors, Side, "Side", [b'B', b'S']);
-enum_unknown_byte_test!(
-    printable_unknown_byte_errors,
-    Printable,
-    "Printable",
-    [b'N', b'Y']
-);
+enum_unknown_byte_test!(side_unknown_byte_errors, Side, "Side", b"BS");
+enum_unknown_byte_test!(printable_unknown_byte_errors, Printable, "Printable", b"NY");
 enum_unknown_byte_test!(
     breached_level_unknown_byte_errors,
     BreachedLevel,
     "BreachedLevel",
-    [b'1', b'2', b'3']
+    b"123"
 );
 enum_unknown_byte_test!(
     ipo_release_qualifier_unknown_byte_errors,
     IpoReleaseQualifier,
     "IpoReleaseQualifier",
-    [b'A', b'C']
+    b"AC"
 );

@@ -46,6 +46,10 @@ format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - v0.1 ships with `enable.auto.commit=true`. Manual commit
   ergonomics tracked as a follow-up.
 
+### Changed
+
+- Dependencies updated to latest stable versions (`rdkafka` 0.36 -> 0.39).
+
 ## [0.1.0] — 2026-05-06
 
 ### Initial Release

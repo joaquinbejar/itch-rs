@@ -19,7 +19,7 @@ tokio-util     = { workspace = true, features = ["codec"] }
 bytes          = { workspace = true }
 futures        = { workspace = true }
 tracing        = { workspace = true }
-zstd           = { version = "0.13", default-features = false }
+zstd           = { version = "0.14", default-features = false }
 pin-project-lite = "0.2"
 
 [dev-dependencies]

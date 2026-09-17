@@ -14,7 +14,7 @@ itch-protocol = { version = "1.0", path = "../itch-protocol" }
 futures = "0.3"
 async-trait = "0.1"
 bytes = "1"
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 tokio = { version = "1", features = ["sync", "time", "rt"] }
 # itch-replay feature added in issue #47

@@ -35,3 +35,8 @@ format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   writers and readers, and the full `assert_seq_store_contract` from
   `itch-source::testing`. Tests skip-not-fail when `ITCH_POSTGRES_URL` is
   unset.
+
+### Changed
+
+- Dependencies updated to latest stable versions (`sqlx` 0.8 -> 0.9; the `runtime-tokio-rustls` feature became `runtime-tokio` + `tls-rustls-ring`, and dynamic table-name statements are wrapped in `AssertSqlSafe` after identifier validation).
+

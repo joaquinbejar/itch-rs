@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use itch_protocol::{Message, ProtocolError};
 use itch_source::SeqStore;
 use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
-use sqlx::Row;
+use sqlx::{AssertSqlSafe, Row};
 use thiserror::Error;
 use tracing::{error, info, warn};
 
@@ -147,7 +147,7 @@ impl PostgresSeqStore {
             table = self.table
         );
 
-        sqlx::query(&create_table)
+        sqlx::query(AssertSqlSafe(create_table))
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -160,7 +160,7 @@ impl PostgresSeqStore {
             table = self.table
         );
 
-        sqlx::query(&create_index)
+        sqlx::query(AssertSqlSafe(create_index))
             .execute(&self.pool)
             .await
             .map_err(|e| {
@@ -183,7 +183,7 @@ impl PostgresSeqStore {
     pub async fn drop_table(&self) -> Result<(), PostgresSeqStoreError> {
         validate_identifier(&self.table)?;
         let stmt = format!("DROP TABLE IF EXISTS {table}", table = self.table);
-        sqlx::query(&stmt).execute(&self.pool).await?;
+        sqlx::query(AssertSqlSafe(stmt)).execute(&self.pool).await?;
         Ok(())
     }
 }
@@ -244,7 +244,7 @@ impl SeqStore for PostgresSeqStore {
             table = self.table
         );
 
-        let result = sqlx::query(&stmt)
+        let result = sqlx::query(AssertSqlSafe(stmt))
             .bind(seq_i64)
             .bind(&buf)
             .execute(&self.pool)
@@ -282,7 +282,7 @@ impl SeqStore for PostgresSeqStore {
             table = self.table
         );
 
-        let rows: Vec<PgRow> = sqlx::query(&stmt)
+        let rows: Vec<PgRow> = sqlx::query(AssertSqlSafe(stmt))
             .bind(from_i64)
             .bind(count_i64)
             .fetch_all(&self.pool)
@@ -324,7 +324,9 @@ impl SeqStore for PostgresSeqStore {
             "SELECT COALESCE(MAX(seq), 0)::BIGINT AS m FROM {table}",
             table = self.table
         );
-        let row: PgRow = sqlx::query(&stmt).fetch_one(&self.pool).await?;
+        let row: PgRow = sqlx::query(AssertSqlSafe(stmt))
+            .fetch_one(&self.pool)
+            .await?;
         let v: i64 = row.try_get::<i64, _>("m")?;
         Ok(v.max(0) as u64)
     }
@@ -334,7 +336,9 @@ impl SeqStore for PostgresSeqStore {
             "SELECT COALESCE(MIN(seq), 0)::BIGINT AS m FROM {table}",
             table = self.table
         );
-        let row: PgRow = sqlx::query(&stmt).fetch_one(&self.pool).await?;
+        let row: PgRow = sqlx::query(AssertSqlSafe(stmt))
+            .fetch_one(&self.pool)
+            .await?;
         let v: i64 = row.try_get::<i64, _>("m")?;
         Ok(v.max(0) as u64)
     }

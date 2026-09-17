@@ -70,12 +70,7 @@ fn vectors_cover_all_twenty_message_tags() {
             tags.insert(tag);
         }
     }
-    let expected: BTreeSet<u8> = [
-        b'S', b'R', b'H', b'Y', b'L', b'V', b'W', b'K', b'A', b'F', b'E', b'C', b'X', b'D', b'U',
-        b'P', b'Q', b'B', b'I', b'N',
-    ]
-    .into_iter()
-    .collect();
+    let expected: BTreeSet<u8> = b"SRHYLVWKAFECXDUPQBIN".iter().copied().collect();
     assert_eq!(tags, expected, "missing tag coverage in vectors::all()");
 }
 

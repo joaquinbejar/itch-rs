@@ -3,7 +3,7 @@ name        = "itch-source-redis"
 description = "Redis-backed SeqStore for distributed ITCH 5.0 publishers"
 version.workspace      = true
 edition.workspace      = true
-rust-version.workspace = true
+rust-version           = "1.88"
 license.workspace      = true
 repository.workspace   = true
 authors.workspace      = true
@@ -17,7 +17,7 @@ async-trait   = "0.1"
 thiserror     = { workspace = true }
 tracing       = { workspace = true }
 bytes         = { workspace = true }
-redis         = { version = "0.27", default-features = false, features = ["tokio-comp", "connection-manager"] }
+redis         = { version = "1.7", default-features = false, features = ["tokio-comp", "connection-manager"] }
 tokio         = { workspace = true, features = ["rt", "time", "macros"] }
 
 [dev-dependencies]

@@ -526,7 +526,7 @@ async fn test_login_rejected_packet_forwarding() {
 #[tokio::test]
 async fn test_bad_itch_inside_decompressed_payload_then_recovery() {
     // Compress a single byte that is NOT a valid ITCH tag.
-    let bogus = [b'!'];
+    let bogus = *b"!";
     let bad_payload = zstd::stream::encode_all(&bogus[..], 0).expect("compress raw");
     let good = compress_messages(&[sample_message(99)], 0).expect("compress");
 

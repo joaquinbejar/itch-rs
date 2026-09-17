@@ -76,13 +76,13 @@ jobs:
       - run: cargo doc --workspace --no-deps
 
   msrv:
-    name: cargo build + test (MSRV 1.75)
+    name: cargo build + test (MSRV 1.94)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install system deps (librdkafka build)
         run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev libssl-dev libsasl2-dev
-      - uses: dtolnay/rust-toolchain@1.75
+      - uses: dtolnay/rust-toolchain@1.94
       - uses: Swatinem/rust-cache@v2
       - name: cargo build (MSRV)
         run: cargo build --workspace --all-features

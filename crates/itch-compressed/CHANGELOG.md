@@ -119,3 +119,7 @@ and this project adheres to per-crate
   for `itch-tcp` or `itch-mold`) and ADR-0009 (SoupBinTCP
   session model — reconnect contract reused verbatim by
   `ResilientCompressedSoupClient`).
+
+### Changed
+
+- Dependencies updated to latest stable versions (`zstd` 0.13 -> 0.14).

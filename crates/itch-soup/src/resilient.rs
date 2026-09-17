@@ -33,7 +33,7 @@ use std::time::Duration;
 
 use futures::stream::Stream;
 use itch_protocol::Message;
-use rand::Rng;
+use rand::RngExt;
 use tokio::net::TcpStream;
 
 use crate::{login_with_timeout, LoginRejectReason, SoupConnection, SoupCredentials, SoupError};
@@ -385,8 +385,8 @@ impl ResilientSoupClient {
         let chosen = if upper_ms <= min_ms {
             min_ms
         } else {
-            let mut rng = rand::thread_rng();
-            rng.gen_range(min_ms..=upper_ms)
+            let mut rng = rand::rng();
+            rng.random_range(min_ms..=upper_ms)
         };
         Duration::from_millis(chosen)
     }
