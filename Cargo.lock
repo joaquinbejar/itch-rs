@@ -958,7 +958,7 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "itch-book"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "futures",
  "itch-protocol",
@@ -968,7 +968,7 @@ dependencies = [
 
 [[package]]
 name = "itch-client"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "futures",
@@ -983,7 +983,7 @@ dependencies = [
 
 [[package]]
 name = "itch-compressed"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "futures",
@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "itch-conformance"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "futures",
  "itch-mold",
@@ -1012,7 +1012,7 @@ dependencies = [
 
 [[package]]
 name = "itch-mold"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "criterion",
@@ -1029,11 +1029,11 @@ dependencies = [
 
 [[package]]
 name = "itch-orderbook"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "itch-protocol"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "criterion",
  "proptest",
@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "itch-replay"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bytes",
  "futures",
@@ -1054,7 +1054,7 @@ dependencies = [
 
 [[package]]
 name = "itch-rs"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "futures",
  "itch-mold",
@@ -1067,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "itch-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "futures",
@@ -1083,7 +1083,7 @@ dependencies = [
 
 [[package]]
 name = "itch-soup"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "criterion",
@@ -1100,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "itch-source"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1113,7 +1113,7 @@ dependencies = [
 
 [[package]]
 name = "itch-source-kafka"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "futures",
  "itch-protocol",
@@ -1126,7 +1126,7 @@ dependencies = [
 
 [[package]]
 name = "itch-source-postgres"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1140,7 +1140,7 @@ dependencies = [
 
 [[package]]
 name = "itch-source-redis"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1154,7 +1154,7 @@ dependencies = [
 
 [[package]]
 name = "itch-tcp"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "bytes",
  "futures",

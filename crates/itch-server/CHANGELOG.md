@@ -6,6 +6,8 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+## 0.1.1 — 2026-09-18
+
 ### Added
 
 - `--transport tcp|soup|mold` flag (default `tcp`) — runtime

@@ -7,6 +7,8 @@ and this crate adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-18
+
 ### Added
 
 - Initial single-symbol L2 (price-level) book reconstruction.
