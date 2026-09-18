@@ -21,6 +21,7 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Dependencies updated to latest stable versions (`clap` 4.4 -> 4.6).
 - Rewrite main glue layer to use `itch_tcp::Server::bind(addr, source, store, policy).serve()`.
   **~30 LoC main per ADR-0012 acceptance**: source + store + policy constructor calls,
   no bespoke accept/send loops.

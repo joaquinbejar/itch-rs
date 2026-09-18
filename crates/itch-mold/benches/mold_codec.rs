@@ -6,8 +6,9 @@
 //! deferred to a follow-up alongside the matching `itch-soup`
 //! work — see `BENCH.md`.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use itch_mold::{MessageBlock, MoldPacket};
+use std::hint::black_box;
 
 const SESSION: [u8; 10] = *b"BENCH00001";
 

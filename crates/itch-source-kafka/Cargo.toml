@@ -16,7 +16,7 @@ itch-source   = { workspace = true }
 thiserror     = { workspace = true }
 tracing       = { workspace = true }
 futures       = { workspace = true }
-rdkafka       = { version = "0.36", default-features = false, features = ["tokio", "cmake-build"] }
+rdkafka       = { version = "0.39", default-features = false, features = ["tokio", "cmake-build"] }
 tokio         = { workspace = true, features = ["rt", "time", "macros"] }
 
 [dev-dependencies]

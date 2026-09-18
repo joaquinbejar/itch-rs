@@ -19,7 +19,7 @@ itch-protocol      = { workspace = true }
 itch-tcp           = { workspace = true }
 itch-soup          = { workspace = true }
 itch-mold          = { workspace = true }
-clap               = { version = "4.4", features = ["derive"] }
+clap               = { version = "4.6", features = ["derive"] }
 tokio              = { workspace = true, features = ["net", "rt-multi-thread", "macros", "signal"] }
 futures            = { workspace = true }
 tracing            = { workspace = true }

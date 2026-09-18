@@ -3,8 +3,9 @@
 //! Constructs a 1 MiB pre-built buffer of mixed ITCH messages.
 //! Measures end-to-end throughput: messages / second. Target: > 50 M msgs/s.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use itch_protocol::*;
+use std::hint::black_box;
 
 fn bench_throughput(c: &mut Criterion) {
     // Build a ~1MiB buffer with mixed messages (simplified: just round-robin small msgs)

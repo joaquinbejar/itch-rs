@@ -24,6 +24,10 @@ this project adheres to per-crate [SemVer](https://semver.org/spec/v2.0.0.html).
 - Unit tests for transport-flag parsing and the mold-not-available
   exit code.
 
+### Changed
+
+- Dependencies updated to latest stable versions (`clap` 4.4 -> 4.6).
+
 ## 0.1.0 — 2026-05-05
 
 ### Added

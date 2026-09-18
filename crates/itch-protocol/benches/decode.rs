@@ -3,8 +3,9 @@
 //! Measures end-to-end decode time on a single pre-built buffer for each
 //! of the 20 ITCH 5.0 message types. Target: < 100 ns per message.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use itch_protocol::*;
+use std::hint::black_box;
 
 fn bench_decode(c: &mut Criterion) {
     // SystemEvent

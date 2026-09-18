@@ -292,7 +292,7 @@ mod tests {
             round_lot_size: Shares::from_u32(100),
             round_lots_only: YesNo::No,
             issue_classification: b'D',
-            issue_subtype: [b'Z', b' '],
+            issue_subtype: *b"Z ",
             authenticity: Authenticity::Live,
             ..Default::default()
         })];
@@ -323,7 +323,7 @@ mod tests {
             round_lot_size: Shares::from_u32(100),
             round_lots_only: YesNo::No,
             issue_classification: b'D',
-            issue_subtype: [b'Z', b' '],
+            issue_subtype: *b"Z ",
             authenticity: Authenticity::Live,
             ..Default::default()
         })];

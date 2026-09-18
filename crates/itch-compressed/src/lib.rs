@@ -913,7 +913,7 @@ mod tests {
     #[test]
     fn test_bad_itch_inside_compressed_payload_returns_protocol_error() {
         // Compress a single byte that is NOT a valid ITCH tag.
-        let bogus = [b'!'];
+        let bogus = *b"!";
         let compressed = zstd::stream::encode_all(&bogus[..], 0).expect("compress raw");
         let err = decompress_messages(&compressed).expect_err("must error");
         match err {

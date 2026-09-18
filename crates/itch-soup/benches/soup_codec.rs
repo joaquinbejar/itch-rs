@@ -7,8 +7,9 @@
 //! `itch-mold` work — see `BENCH.md`.
 
 use bytes::BytesMut;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use itch_soup::{LoginAccepted, LoginRejectReason, LoginRequest, SoupCodec, SoupPacket};
+use std::hint::black_box;
 use tokio_util::codec::{Decoder, Encoder};
 
 /// Workload set: one of every packet kind, with the fixed-size
