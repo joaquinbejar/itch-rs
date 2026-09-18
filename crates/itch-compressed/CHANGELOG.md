@@ -7,6 +7,8 @@ and this project adheres to per-crate
 
 ## Unreleased
 
+## 0.1.1 - 2026-09-18
+
 ### Added (issue #41)
 
 - Sandbox conformance integration tests (8 scenarios) at

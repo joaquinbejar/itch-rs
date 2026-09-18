@@ -1,7 +1,7 @@
 [package]
 name        = "itch-tcp"
 description = "Length-prefix TCP framing for itch-protocol — demos and local integration"
-version                = "1.0.0"
+version                = "1.0.1"
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true

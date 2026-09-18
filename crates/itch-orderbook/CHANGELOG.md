@@ -10,6 +10,8 @@ public surface.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-18
+
 ### Added
 
 - New crate `itch-orderbook` (issue #49) as a **design-only stub**.

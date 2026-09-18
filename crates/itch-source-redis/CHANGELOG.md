@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-09-18
+
 ### Added
 
 - `RedisSeqStore` — async `SeqStore` implementation backed by Redis (deadpool-redis) for distributed ITCH publishers.

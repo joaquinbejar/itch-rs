@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-18
+
 - Initial 0.1.0 release: sync `MessageIterator` with Glimpse + RawBodies format support.
 - Error enum with `Truncated`, `FrameTooLarge`, protocol error variants.
 - Async adapter skeleton behind `tokio` feature (placeholder for v0.4.1+).

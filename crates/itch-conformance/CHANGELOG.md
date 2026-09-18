@@ -9,6 +9,8 @@ and ships only as a major release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-18
+
 ### Added
 
 - New crate `itch-conformance` (issue #33). Publishes canonical
